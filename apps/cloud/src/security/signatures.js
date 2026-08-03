@@ -2,6 +2,22 @@ import crypto from 'node:crypto';
 
 const MAX_CLOCK_SKEW_SECONDS = 300;
 
+function normalizeJsonValue(value) {
+  if (Array.isArray(value)) return value.map(normalizeJsonValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, normalizeJsonValue(value[key])]),
+    );
+  }
+  return value;
+}
+
+export function canonicalJson(value) {
+  return JSON.stringify(normalizeJsonValue(value));
+}
+
 export function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
