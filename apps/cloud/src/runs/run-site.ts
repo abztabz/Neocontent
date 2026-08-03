@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { SupabaseRepository } from "../db/supabase.js";
-import { buildEvidencePackage, type SourceEvidence } from "../research/research-pipeline.js";
+import { buildEvidencePackage, type FreshnessStatus, type SourceEvidence } from "../research/research-pipeline.js";
 import { researchIndustry } from "../research/live-research.js";
+import { assertPublishable, verifyClaims, type EvidenceSource, type MaterialClaim } from "../research/claim-verifier.js";
 import { writeArticle } from "../writing/article-writer.js";
 import { publishToWordPress } from "../publishing/wordpress-publisher.js";
 
@@ -12,6 +13,22 @@ function nextRun(cadence: unknown): string {
   else if (cadence === "monthly") date.setUTCMonth(date.getUTCMonth() + 1);
   else date.setUTCDate(date.getUTCDate() + 7);
   return date.toISOString();
+}
+
+function freshness(value: unknown): FreshnessStatus {
+  return value === "current" || value === "aging" || value === "stale" ? value : "unknown";
+}
+
+function meaningfulTerms(text: string): string[] {
+  const stop = new Set(["that", "this", "with", "from", "have", "will", "their", "about", "into", "than", "when", "where", "which", "your", "they", "them", "were", "been", "being", "also"]);
+  return [...new Set(text.toLowerCase().match(/[a-z0-9]{4,}/g) ?? [])].filter((term) => !stop.has(term));
+}
+
+function businessClaimSupported(claim: string, knowledgeText: string): boolean {
+  const terms = meaningfulTerms(claim);
+  if (!terms.length) return false;
+  const matched = terms.filter((term) => knowledgeText.toLowerCase().includes(term)).length;
+  return matched / terms.length >= 0.45;
 }
 
 export async function runSite(
@@ -29,11 +46,16 @@ export async function runSite(
   });
 
   try {
-    const [knowledge, sources, recentArticles] = await Promise.all([
+    const [knowledge, pendingKnowledge, sources, recentArticles] = await Promise.all([
       repository.listApprovedKnowledge(String(site.id)),
+      repository.listPendingKnowledgeCandidates(String(site.id)),
       repository.listApprovedSources(String(site.id)),
       repository.listRecentArticles(String(site.id)),
     ]);
+
+    if (site.knowledge_review_required !== false && pendingKnowledge.length > 0) {
+      throw new Error("Content run blocked because website knowledge changes require approval");
+    }
 
     const customerEvidence: SourceEvidence[] = sources.map((source) => ({
       id: String(source.id),
@@ -41,7 +63,8 @@ export async function runSite(
       title: String(source.label || source.url),
       publisher: String(source.publisher || new URL(String(source.url)).hostname),
       trustScore: Number(source.trust_score || 0),
-      freshness: String(source.freshness_status || "unknown"),
+      freshness: freshness(source.freshness_status),
+      sourceType: String(source.purpose || "customer_source"),
       excerpts: Array.isArray(source.approved_claims) ? source.approved_claims.map(String) : [],
     }));
 
@@ -66,10 +89,48 @@ export async function runSite(
     });
 
     if (article.businessAlignmentScore < 80) throw new Error("Business alignment score is below the V1 threshold");
-    if (article.verificationScore < 70) throw new Error("Verification score is below the V1 threshold");
+    if (article.verificationScore < 70) throw new Error("Model verification score is below the V1 threshold");
     if (site.content_mode === "industry_authority" && article.sources.length === 0) {
       throw new Error("Industry authority articles require visible source records");
     }
+
+    const evidenceById = new Map(evidence.sources.map((source) => [source.id, source]));
+    const externalClaims: MaterialClaim[] = article.materialClaims
+      .filter((claim) => claim.category !== "business")
+      .map((claim) => ({ ...claim }));
+    const evidenceSources: EvidenceSource[] = evidence.sources.map((source) => ({
+      id: source.id,
+      title: source.title,
+      url: source.url,
+      publisher: source.publisher,
+      trustScore: source.trustScore,
+      freshness: source.freshness,
+      text: source.excerpts.join(" "),
+    }));
+    const verifications = verifyClaims(externalClaims, evidenceSources);
+    assertPublishable(verifications);
+
+    const knowledgeText = [
+      String(site.business_name || ""), String(site.business_description || ""),
+      JSON.stringify(site.services || []), JSON.stringify(site.locations || []),
+      ...knowledge.map((item) => `${String(item.title || "")} ${String(item.content || "")}`),
+    ].join(" ");
+    const unsupportedBusinessClaims = article.materialClaims.filter(
+      (claim) => claim.category === "business" && !businessClaimSupported(claim.text, knowledgeText),
+    );
+    if (unsupportedBusinessClaims.length > 0) {
+      throw new Error(`Publication blocked: ${unsupportedBusinessClaims.length} business claim(s) are absent from approved knowledge`);
+    }
+
+    for (const source of article.sources) {
+      if (!evidenceById.has(source.id)) throw new Error(`Publication blocked: article referenced an unapproved source (${source.id})`);
+    }
+
+    const deterministicScore = Math.round(
+      (verifications.reduce((sum, item) => sum + item.confidence, 0) / Math.max(verifications.length, 1)) * 0.7
+      + article.businessAlignmentScore * 0.3,
+    );
+    if (deterministicScore < 70) throw new Error("Deterministic verification score is below the V1 threshold");
 
     const record = await repository.insertArticle({
       organization_id: site.organization_id,
@@ -80,14 +141,14 @@ export async function runSite(
       rationale: article.rationale,
       authority_score: article.authorityScore,
       business_alignment_score: article.businessAlignmentScore,
-      verification_score: article.verificationScore,
+      verification_score: deterministicScore,
       source_manifest: article.sources,
       claim_map: article.materialClaims,
       status: "generated",
       idempotency_key: idempotencyKey,
     });
 
-    const wordpress = await publishToWordPress({ site, article, idempotencyKey });
+    const wordpress = await publishToWordPress({ site, article: { ...article, verificationScore: deterministicScore }, idempotencyKey });
     await repository.updateArticle(String(record.id), {
       status: wordpress.status === "publish" ? "published" : "awaiting_approval",
       external_id: wordpress.externalId ?? null,
