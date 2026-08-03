@@ -49,7 +49,7 @@ function outputText(payload: Record<string, unknown>): string {
 export async function writeArticle(input: {
   site: Record<string, unknown>;
   approvedKnowledge: Record<string, unknown>[];
-  evidence: Record<string, unknown>[];
+  evidence: unknown[];
   existingTitles: string[];
 }): Promise<GeneratedArticle> {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -100,14 +100,9 @@ export async function writeArticle(input: {
                   type: "object",
                   additionalProperties: false,
                   properties: {
-                    id: { type: "string" },
-                    title: { type: "string" },
-                    publisher: { type: "string" },
-                    url: { type: "string" },
-                    publishedAt: { type: "string" },
-                    retrievedAt: { type: "string" },
-                    claimSupported: { type: "string" },
-                    sourceType: { type: "string" }
+                    id: { type: "string" }, title: { type: "string" }, publisher: { type: "string" },
+                    url: { type: "string" }, publishedAt: { type: "string" }, retrievedAt: { type: "string" },
+                    claimSupported: { type: "string" }, sourceType: { type: "string" }
                   },
                   required: ["id", "title", "publisher", "url", "publishedAt", "retrievedAt", "claimSupported", "sourceType"]
                 }
