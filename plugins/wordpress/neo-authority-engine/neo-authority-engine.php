@@ -19,6 +19,7 @@ require_once __DIR__ . '/includes/class-neo-cloud-client.php';
 require_once __DIR__ . '/includes/class-neo-source-manager.php';
 require_once __DIR__ . '/includes/class-neo-admin.php';
 require_once __DIR__ . '/includes/class-neo-settings.php';
+require_once __DIR__ . '/includes/class-neo-knowledge-manager.php';
 require_once __DIR__ . '/includes/class-neo-publisher.php';
 
 final class Neo_Authority_Engine_V1 {
@@ -31,6 +32,7 @@ final class Neo_Authority_Engine_V1 {
         $sources = new Neo_Source_Manager($client);
         new Neo_Admin($client, $sources);
         new Neo_Settings($client);
+        new Neo_Knowledge_Manager($client);
         new Neo_Publisher();
         add_action('rest_api_init', [$this, 'register_status_route']);
     }
@@ -49,6 +51,7 @@ final class Neo_Authority_Engine_V1 {
         }
         if (get_option(NAE_SOURCES, null) === null) add_option(NAE_SOURCES, [], '', false);
         if (get_option(NAE_KNOWLEDGE, null) === null) add_option(NAE_KNOWLEDGE, [], '', false);
+        if (get_option('nae_v1_knowledge_candidates', null) === null) add_option('nae_v1_knowledge_candidates', [], '', false);
     }
 
     public function register_status_route(): void {
