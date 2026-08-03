@@ -11,6 +11,15 @@ export interface AddSourceRequest {
   purpose: "business_knowledge" | "industry_research" | "preferred_research" | "topic_discovery_only";
 }
 
+function suggestedClaims(text: string): string[] {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length >= 80 && sentence.length <= 500)
+    .filter((sentence) => !/cookie|privacy policy|terms of use|subscribe|newsletter/i.test(sentence))
+    .slice(0, 12);
+}
+
 export async function addSource(repository: SupabaseRepository, input: AddSourceRequest) {
   const pending = await repository.insertUserSource({
     organization_id: input.organizationId,
@@ -25,6 +34,7 @@ export async function addSource(repository: SupabaseRepository, input: AddSource
     const fetched = await fetchSource(input.url);
     const extracted = extractSource(fetched);
     const assessment = scoreSource(extracted);
+    const suggestions = suggestedClaims(extracted.text);
 
     return repository.updateUserSource(String(pending?.id), {
       status: "pending_review",
@@ -35,6 +45,7 @@ export async function addSource(repository: SupabaseRepository, input: AddSource
       trust_score: assessment.trustScore,
       freshness_status: assessment.freshnessStatus,
       extracted_text: extracted.text,
+      suggested_claims: suggestions,
       content_fingerprint: extracted.fingerprint,
       failure_reason: extracted.warnings.length ? extracted.warnings.join("; ") : null,
     });
@@ -56,6 +67,6 @@ export async function decideSource(
 ) {
   return repository.updateUserSource(sourceId, {
     status: decision === "approve" ? "approved" : "rejected",
-    approved_claims: approvedClaims,
+    approved_claims: decision === "approve" ? approvedClaims : [],
   });
 }
