@@ -1,4 +1,4 @@
-import { verifySignedRequest } from "../security/signatures.js";
+import { verifyRequest } from "../security/signatures.js";
 import { SupabaseRepository } from "../db/supabase.js";
 
 export interface SignedRequestLike {
@@ -23,7 +23,7 @@ export async function authenticateSiteRequest(
   const site = await repository.findSiteByExternalId(siteId);
   if (!site) throw new Error("Site is not registered");
 
-  verifySignedRequest({
+  const valid = verifyRequest({
     method: request.method,
     path: request.path,
     timestamp,
@@ -32,6 +32,7 @@ export async function authenticateSiteRequest(
     secret: String(site.site_secret ?? ""),
     now: Date.now(),
   });
+  if (!valid) throw new Error("Invalid or stale request signature");
 
   return site;
 }
