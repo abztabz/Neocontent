@@ -1,3 +1,4 @@
+import { validate as isUuid } from "node:util";
 import { createRepository } from "../../runtime.js";
 import { authenticateSiteRequest, type SignedRequestLike } from "../authenticate.js";
 import { runSite } from "../../runs/run-site.js";
@@ -13,7 +14,7 @@ export async function handleRun(
     repository,
     site,
     payload.trigger ?? "manual",
-    payload.idempotencyKey,
+    payload.idempotencyKey as `${string}-${string}-${string}-${string}-${string}`,
   );
   return { status: 200, body: result };
 }
