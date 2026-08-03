@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { SupabaseRepository } from "../db/supabase.js";
+import { generateOpportunities, selectOpportunity } from "../opportunities/opportunity-engine.js";
 import { buildEvidencePackage, type FreshnessStatus, type SourceEvidence } from "../research/research-pipeline.js";
 import { researchIndustry } from "../research/live-research.js";
 import { assertPublishable, verifyClaims, type EvidenceSource, type MaterialClaim } from "../research/claim-verifier.js";
@@ -35,7 +36,7 @@ export async function runSite(
   repository: SupabaseRepository,
   site: Record<string, unknown>,
   trigger: "manual" | "scheduled",
-  idempotencyKey = randomUUID(),
+  idempotencyKey: string = randomUUID(),
 ) {
   const run = await repository.insertRun({
     organization_id: site.organization_id,
@@ -44,6 +45,7 @@ export async function runSite(
     status: "started",
     idempotency_key: idempotencyKey,
   });
+  if (!run?.id) throw new Error("Unable to create content run");
 
   try {
     const [knowledge, pendingKnowledge, sources, recentArticles] = await Promise.all([
@@ -68,29 +70,43 @@ export async function runSite(
       excerpts: Array.isArray(source.approved_claims) ? source.approved_claims.map(String) : [],
     }));
 
-    const shouldResearch = site.content_mode === "balanced" || site.content_mode === "industry_authority";
+    const existingTitles = recentArticles.map((item) => String(item.title));
+    const opportunities = generateOpportunities({
+      businessName: String(site.business_name || "the business"),
+      industry: String(site.industry || "the industry"),
+      audience: String(site.target_audience || "customers"),
+      services: Array.isArray(site.services) ? site.services.map(String) : [],
+      contentMode: String(site.content_mode || "balanced"),
+      evidenceCount: customerEvidence.length,
+      existingTitles,
+    });
+    const opportunity = selectOpportunity(opportunities);
+
+    const shouldResearch = opportunity.stream === "industry" || site.content_mode === "industry_authority";
     const liveEvidence = shouldResearch
       ? await researchIndustry({
           industry: String(site.industry || "the business industry"),
           audience: String(site.target_audience || "the business audience"),
+          topicHint: opportunity.title,
         })
       : [];
 
     const evidence = buildEvidencePackage([...customerEvidence, ...liveEvidence]);
-    if (site.content_mode === "industry_authority" && !evidence.publishable) {
-      throw new Error(evidence.reasons.join(" ") || "Industry authority mode requires verified evidence");
+    if ((opportunity.stream === "industry" || site.content_mode === "industry_authority") && !evidence.publishable) {
+      throw new Error(evidence.reasons.join(" ") || "Industry content requires verified evidence");
     }
 
     const article = await writeArticle({
       site,
+      opportunity: opportunity as unknown as Record<string, unknown>,
       approvedKnowledge: knowledge,
       evidence: evidence.sources,
-      existingTitles: recentArticles.map((item) => String(item.title)),
+      existingTitles,
     });
 
     if (article.businessAlignmentScore < 80) throw new Error("Business alignment score is below the V1 threshold");
     if (article.verificationScore < 70) throw new Error("Model verification score is below the V1 threshold");
-    if (site.content_mode === "industry_authority" && article.sources.length === 0) {
+    if ((opportunity.stream === "industry" || site.content_mode === "industry_authority") && article.sources.length === 0) {
       throw new Error("Industry authority articles require visible source records");
     }
 
@@ -147,6 +163,7 @@ export async function runSite(
       status: "generated",
       idempotency_key: idempotencyKey,
     });
+    if (!record?.id) throw new Error("Unable to persist generated article");
 
     const wordpress = await publishToWordPress({ site, article: { ...article, verificationScore: deterministicScore }, idempotencyKey });
     await repository.updateArticle(String(record.id), {
@@ -163,7 +180,7 @@ export async function runSite(
     });
     await repository.updateSite(String(site.id), { next_run_at: nextRun(site.cadence) });
 
-    return { status: "completed", runId: run.id, articleId: record.id, wordpress };
+    return { status: "completed", runId: run.id, articleId: record.id, opportunity, wordpress };
   } catch (error) {
     await repository.updateRun(String(run.id), {
       status: "failed",
