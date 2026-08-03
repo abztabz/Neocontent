@@ -18,7 +18,7 @@ export async function handleKnowledgeCandidates(
 ) {
   const repository = createRepository();
   const site = await authenticateSiteRequest(repository, request);
-  let inserted = 0;
+  const synced: Record<string, unknown>[] = [];
   for (const candidate of candidates) {
     const row = await repository.insertKnowledgeCandidate({
       organization_id: site.organization_id,
@@ -33,9 +33,20 @@ export async function handleKnowledgeCandidates(
       confidence: Math.max(0, Math.min(100, candidate.confidence ?? 0)),
       fingerprint: candidate.fingerprint,
     });
-    if (row) inserted += 1;
+    if (row) synced.push(row);
   }
-  return { status: 200, body: { inserted } };
+  return {
+    status: 200,
+    body: {
+      inserted: synced.length,
+      candidates: synced.map((row) => ({
+        id: row.id,
+        externalId: row.external_id,
+        fingerprint: row.fingerprint,
+        status: row.status,
+      })),
+    },
+  };
 }
 
 export async function handleKnowledgeDecision(
