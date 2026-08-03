@@ -5,7 +5,9 @@
     "moduleResolution": "NodeNext",
     "strict": true,
     "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
+    "exactOptionalPropertyTypes": false,
+    "allowJs": true,
+    "checkJs": false,
     "forceConsistentCasingInFileNames": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -13,5 +15,5 @@
     "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "api/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.js", "api/**/*.ts"]
 }
