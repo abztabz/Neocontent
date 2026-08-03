@@ -1,3 +1,5 @@
+import { canonicalJson } from "../src/security/signatures.js";
+
 export interface VercelRequestLike {
   method?: string;
   url?: string;
@@ -12,8 +14,14 @@ export interface VercelResponseLike {
 }
 
 export function rawBody(request: VercelRequestLike): string {
-  if (typeof request.body === "string") return request.body;
-  return JSON.stringify(request.body ?? {});
+  if (typeof request.body === "string") {
+    try {
+      return canonicalJson(JSON.parse(request.body));
+    } catch {
+      return request.body;
+    }
+  }
+  return canonicalJson(request.body ?? {});
 }
 
 export function normalizedHeaders(request: VercelRequestLike): Record<string, string | undefined> {

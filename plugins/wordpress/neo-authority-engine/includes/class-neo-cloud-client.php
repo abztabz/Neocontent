@@ -11,6 +11,28 @@ final class Neo_Cloud_Client {
         ]);
     }
 
+    private function canonicalize_json_value($value) {
+        if (!is_array($value)) return $value;
+
+        $keys = array_keys($value);
+        $is_list = $value === [] || $keys === range(0, count($value) - 1);
+        if ($is_list) return array_map([$this, 'canonicalize_json_value'], $value);
+
+        ksort($value, SORT_STRING);
+        foreach ($value as $key => $item) {
+            $value[$key] = $this->canonicalize_json_value($item);
+        }
+        return $value;
+    }
+
+    private function canonical_json(array $payload): string {
+        $encoded = wp_json_encode(
+            $this->canonicalize_json_value($payload),
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+        );
+        return is_string($encoded) ? $encoded : '{}';
+    }
+
     private function headers(string $method, string $path, string $body): array {
         $settings = $this->settings();
         $timestamp = (string) time();
@@ -27,7 +49,7 @@ final class Neo_Cloud_Client {
         $settings = $this->settings();
         if (empty($settings['cloud_url'])) return new WP_Error('nae_cloud_missing', 'Neo Authority Cloud URL is not configured.');
 
-        $body = $payload ? wp_json_encode($payload) : '';
+        $body = $payload ? $this->canonical_json($payload) : '';
         $response = wp_remote_request(untrailingslashit($settings['cloud_url']) . $path, [
             'method' => $method,
             'timeout' => 90,
