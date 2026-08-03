@@ -2,9 +2,9 @@ import { SupabaseRepository } from "../db/supabase.js";
 import { fetchSource } from "../research/fetch-source.js";
 import { extractSource } from "../research/extract-source.js";
 import { scoreSource } from "../research/score-source.js";
-import { assertAllowedSourceUrl } from "../research/source-governance.js";
 
 export interface AddSourceRequest {
+  organizationId: string;
   siteId: string;
   url: string;
   label?: string;
@@ -12,41 +12,36 @@ export interface AddSourceRequest {
 }
 
 export async function addSource(repository: SupabaseRepository, input: AddSourceRequest) {
-  const safeUrl = await assertAllowedSourceUrl(input.url);
   const pending = await repository.insertUserSource({
+    organization_id: input.organizationId,
     site_id: input.siteId,
-    url: safeUrl.toString(),
-    label: input.label ?? null,
-    source_purpose: input.purpose,
+    url: input.url,
+    label: input.label ?? "",
+    purpose: input.purpose,
     status: "pending_fetch",
   });
 
   try {
-    const fetched = await fetchSource(safeUrl);
+    const fetched = await fetchSource(input.url);
     const extracted = extractSource(fetched);
-    const assessment = scoreSource({
-      url: safeUrl,
-      title: extracted.title,
-      publisher: extracted.publisher,
-      publishedAt: extracted.publishedAt,
-      text: extracted.text,
-    });
+    const assessment = scoreSource(extracted);
 
     return repository.updateUserSource(String(pending?.id), {
       status: "pending_review",
-      canonical_url: fetched.finalUrl,
-      publisher: extracted.publisher,
-      published_at: extracted.publishedAt,
-      retrieved_at: new Date().toISOString(),
+      url: extracted.canonicalUrl,
+      publisher: extracted.publisher ?? null,
+      published_at: extracted.publishedAt ?? null,
+      retrieved_at: fetched.retrievedAt,
       trust_score: assessment.trustScore,
-      freshness_status: assessment.freshness,
+      freshness_status: assessment.freshnessStatus,
       extracted_text: extracted.text,
-      risk_flags: assessment.riskFlags,
+      content_fingerprint: extracted.fingerprint,
+      failure_reason: extracted.warnings.length ? extracted.warnings.join("; ") : null,
     });
   } catch (error) {
     await repository.updateUserSource(String(pending?.id), {
       status: "fetch_failed",
-      fetch_error: error instanceof Error ? error.message : String(error),
+      failure_reason: error instanceof Error ? error.message : String(error),
       retrieved_at: new Date().toISOString(),
     });
     throw error;
@@ -62,6 +57,5 @@ export async function decideSource(
   return repository.updateUserSource(sourceId, {
     status: decision === "approve" ? "approved" : "rejected",
     approved_claims: approvedClaims,
-    reviewed_at: new Date().toISOString(),
   });
 }
