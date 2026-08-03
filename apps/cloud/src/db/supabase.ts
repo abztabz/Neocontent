@@ -32,11 +32,8 @@ export class SupabaseRepository {
 
   async listDueSites(limit = 20) {
     const query = new URLSearchParams({
-      select: "*",
-      enabled: "eq.true",
-      next_run_at: `lte.${new Date().toISOString()}`,
-      order: "next_run_at.asc",
-      limit: String(limit),
+      select: "*", enabled: "eq.true", next_run_at: `lte.${new Date().toISOString()}`,
+      order: "next_run_at.asc", limit: String(limit),
     });
     return this.request<Record<string, unknown>[]>(`sites?${query.toString()}`);
   }
@@ -57,8 +54,35 @@ export class SupabaseRepository {
 
   async updateSite(id: string, patch: Record<string, unknown>) {
     const rows = await this.request<Record<string, unknown>[]>(`sites?id=eq.${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: JSON.stringify({ ...patch, updated_at: new Date().toISOString() }),
+      method: "PATCH", body: JSON.stringify({ ...patch, updated_at: new Date().toISOString() }),
+    });
+    return rows[0];
+  }
+
+  async insertKnowledgeCandidate(input: Record<string, unknown>) {
+    const rows = await this.request<Record<string, unknown>[]>("knowledge_candidates?on_conflict=site_id,fingerprint", {
+      method: "POST",
+      headers: { prefer: "resolution=ignore-duplicates,return=representation" },
+      body: JSON.stringify(input),
+    });
+    return rows[0] ?? null;
+  }
+
+  async updateKnowledgeCandidate(id: string, patch: Record<string, unknown>) {
+    const rows = await this.request<Record<string, unknown>[]>(`knowledge_candidates?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH", body: JSON.stringify(patch),
+    });
+    return rows[0];
+  }
+
+  async listPendingKnowledgeCandidates(siteId: string) {
+    const query = new URLSearchParams({ select: "*", site_id: `eq.${siteId}`, status: "eq.pending", order: "detected_at.desc" });
+    return this.request<Record<string, unknown>[]>(`knowledge_candidates?${query.toString()}`);
+  }
+
+  async upsertKnowledgeItem(input: Record<string, unknown>) {
+    const rows = await this.request<Record<string, unknown>[]>("knowledge_items", {
+      method: "POST", body: JSON.stringify(input),
     });
     return rows[0];
   }
@@ -70,8 +94,7 @@ export class SupabaseRepository {
 
   async updateUserSource(id: string, patch: Record<string, unknown>) {
     const rows = await this.request<Record<string, unknown>[]>(`user_sources?id=eq.${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: JSON.stringify({ ...patch, updated_at: new Date().toISOString() }),
+      method: "PATCH", body: JSON.stringify({ ...patch, updated_at: new Date().toISOString() }),
     });
     return rows[0];
   }
