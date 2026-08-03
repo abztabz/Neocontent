@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test",
-    "check": "node --check src/index.js"
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/**/*.test.ts"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }
