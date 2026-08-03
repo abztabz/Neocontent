@@ -1,0 +1,16 @@
+{
+  "framework": null,
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "functions": {
+    "api/**/*.ts": {
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/run",
+      "schedule": "0 2 * * *"
+    }
+  ]
+}
