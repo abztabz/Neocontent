@@ -1,11 +1,14 @@
+export type FreshnessStatus = "current" | "aging" | "stale" | "unknown";
+
 export interface SourceEvidence {
   id: string;
   url: string;
   title: string;
   publisher: string;
   trustScore: number;
-  freshness: string;
+  freshness: FreshnessStatus;
   excerpts: string[];
+  sourceType?: string;
 }
 
 export interface EvidencePackage {
