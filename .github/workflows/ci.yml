@@ -22,3 +22,10 @@ jobs:
       - run: npm test
       - name: Lint WordPress PHP
         run: find plugins/wordpress -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Package WordPress plugin
+        run: bash scripts/package-wordpress.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neo-authority-engine-wordpress-v1
+          path: dist/neo-authority-engine-v1.zip
+          if-no-files-found: error
