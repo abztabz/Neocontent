@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { verifyRequest } from "../security/signatures.js";
 import { decryptSecret } from "../security/secret-vault.js";
 import { SupabaseRepository } from "../db/supabase.js";
@@ -35,6 +36,11 @@ export async function authenticateSiteRequest(
     now: Date.now(),
   });
   if (!valid) throw new Error("Invalid or stale request signature");
+
+  const signatureHash = createHash("sha256")
+    .update(`${siteId}:${timestamp}:${suppliedSignature}`)
+    .digest("hex");
+  await repository.consumeRequestSignature(String(site.id), signatureHash);
 
   return site;
 }
