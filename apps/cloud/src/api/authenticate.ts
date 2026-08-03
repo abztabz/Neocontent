@@ -1,4 +1,5 @@
 import { verifyRequest } from "../security/signatures.js";
+import { decryptSecret } from "../security/secret-vault.js";
 import { SupabaseRepository } from "../db/supabase.js";
 
 export interface SignedRequestLike {
@@ -23,13 +24,14 @@ export async function authenticateSiteRequest(
   const site = await repository.findSiteByExternalId(siteId);
   if (!site) throw new Error("Site is not registered");
 
+  const encryptedSecret = String(site.encrypted_site_secret ?? "");
   const valid = verifyRequest({
     method: request.method,
     path: request.path,
     timestamp,
     body: request.body,
     signature: suppliedSignature,
-    secret: String(site.site_secret ?? ""),
+    secret: decryptSecret(encryptedSecret),
     now: Date.now(),
   });
   if (!valid) throw new Error("Invalid or stale request signature");
