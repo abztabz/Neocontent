@@ -58,6 +58,24 @@ final class Neo_Cloud_Client {
         ]);
     }
 
+    public function sync_knowledge_candidates(array $candidates) {
+        $settings = $this->settings();
+        return $this->request(
+            'POST',
+            '/api/v1/sites/' . rawurlencode($settings['site_id']) . '/knowledge-candidates',
+            ['candidates' => array_values($candidates)]
+        );
+    }
+
+    public function decide_knowledge(string $candidate_id, string $decision, ?string $edited_content = null) {
+        $settings = $this->settings();
+        return $this->request(
+            'POST',
+            '/api/v1/sites/' . rawurlencode($settings['site_id']) . '/knowledge-candidates/' . rawurlencode($candidate_id) . '/decision',
+            ['decision' => $decision, 'editedContent' => $edited_content]
+        );
+    }
+
     public function add_source(array $source) {
         $settings = $this->settings();
         return $this->request('POST', '/api/v1/sites/' . rawurlencode($settings['site_id']) . '/sources', $source);
