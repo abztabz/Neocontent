@@ -5,9 +5,7 @@ export interface SupabaseConfig {
 
 export class SupabaseRepository {
   constructor(private readonly config: SupabaseConfig) {
-    if (!config.url || !config.serviceRoleKey) {
-      throw new Error("Supabase configuration is incomplete");
-    }
+    if (!config.url || !config.serviceRoleKey) throw new Error("Supabase configuration is incomplete");
   }
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -21,7 +19,6 @@ export class SupabaseRepository {
         ...(init.headers ?? {}),
       },
     });
-
     const text = await response.text();
     if (!response.ok) throw new Error(`Supabase ${response.status}: ${text}`);
     return (text ? JSON.parse(text) : null) as T;
@@ -34,10 +31,7 @@ export class SupabaseRepository {
   }
 
   async createOrganization(name: string) {
-    const rows = await this.request<Record<string, unknown>[]>("organizations", {
-      method: "POST",
-      body: JSON.stringify({ name }),
-    });
+    const rows = await this.request<Record<string, unknown>[]>("organizations", { method: "POST", body: JSON.stringify({ name }) });
     return rows[0];
   }
 
@@ -50,11 +44,16 @@ export class SupabaseRepository {
     return rows[0];
   }
 
-  async insertUserSource(input: Record<string, unknown>) {
-    const rows = await this.request<Record<string, unknown>[]>("user_sources", {
-      method: "POST",
-      body: JSON.stringify(input),
+  async updateSite(id: string, patch: Record<string, unknown>) {
+    const rows = await this.request<Record<string, unknown>[]>(`sites?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ ...patch, updated_at: new Date().toISOString() }),
     });
+    return rows[0];
+  }
+
+  async insertUserSource(input: Record<string, unknown>) {
+    const rows = await this.request<Record<string, unknown>[]>("user_sources", { method: "POST", body: JSON.stringify(input) });
     return rows[0];
   }
 
@@ -76,16 +75,31 @@ export class SupabaseRepository {
     return this.request<Record<string, unknown>[]>(`user_sources?${query.toString()}`);
   }
 
+  async listRecentArticles(siteId: string, limit = 30) {
+    const query = new URLSearchParams({ select: "title,status,created_at", site_id: `eq.${siteId}`, order: "created_at.desc", limit: String(limit) });
+    return this.request<Record<string, unknown>[]>(`articles?${query.toString()}`);
+  }
+
+  async insertArticle(input: Record<string, unknown>) {
+    const rows = await this.request<Record<string, unknown>[]>("articles", { method: "POST", body: JSON.stringify(input) });
+    return rows[0];
+  }
+
+  async updateArticle(id: string, patch: Record<string, unknown>) {
+    const rows = await this.request<Record<string, unknown>[]>(`articles?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
+    return rows[0];
+  }
+
   async insertRun(input: Record<string, unknown>) {
     const rows = await this.request<Record<string, unknown>[]>("runs", { method: "POST", body: JSON.stringify(input) });
     return rows[0];
   }
 
   async updateRun(id: string, patch: Record<string, unknown>) {
-    const rows = await this.request<Record<string, unknown>[]>(`runs?id=eq.${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: JSON.stringify(patch),
-    });
+    const rows = await this.request<Record<string, unknown>[]>(`runs?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
     return rows[0];
   }
 }
