@@ -48,6 +48,7 @@ function outputText(payload: Record<string, unknown>): string {
 
 export async function writeArticle(input: {
   site: Record<string, unknown>;
+  opportunity: Record<string, unknown>;
   approvedKnowledge: Record<string, unknown>[];
   evidence: unknown[];
   existingTitles: string[];
@@ -55,7 +56,7 @@ export async function writeArticle(input: {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY is missing");
 
-  const prompt = `Create one evidence-backed WordPress blog for this business.\n\nBUSINESS\n${JSON.stringify(input.site)}\n\nAPPROVED BUSINESS KNOWLEDGE\n${JSON.stringify(input.approvedKnowledge)}\n\nAPPROVED EXTERNAL EVIDENCE\n${JSON.stringify(input.evidence)}\n\nEXISTING TITLES\n${JSON.stringify(input.existingTitles)}\n\nRules:\n- Never claim the business offers anything not present in approved business knowledge or the business profile.\n- Every material external fact must be supported by the supplied evidence.\n- Use the exact evidence source id when linking a claim to evidence.\n- Business claims must be supported by approved business knowledge, not by unrelated external evidence.\n- Timely claims require a current source.\n- General guidance may have an empty sourceIds array only when it makes no material external factual claim.\n- Do not invent sources, dates, statistics, laws, studies, or quotations.\n- Avoid duplicating existing titles.\n- Return clean WordPress HTML between 900 and 1400 words.\n- Return JSON only.`;
+  const prompt = `Create one evidence-backed WordPress blog for this business.\n\nSELECTED CONTENT OPPORTUNITY\n${JSON.stringify(input.opportunity)}\n\nBUSINESS\n${JSON.stringify(input.site)}\n\nAPPROVED BUSINESS KNOWLEDGE\n${JSON.stringify(input.approvedKnowledge)}\n\nAPPROVED EXTERNAL EVIDENCE\n${JSON.stringify(input.evidence)}\n\nEXISTING TITLES\n${JSON.stringify(input.existingTitles)}\n\nRules:\n- Follow the selected content opportunity and preserve its audience intent.\n- Never claim the business offers anything not present in approved business knowledge or the business profile.\n- Every material external fact must be supported by the supplied evidence.\n- Use the exact evidence source id when linking a claim to evidence.\n- Business claims must be supported by approved business knowledge, not by unrelated external evidence.\n- Timely claims require a current source.\n- General guidance may have an empty sourceIds array only when it makes no material external factual claim.\n- Do not invent sources, dates, statistics, laws, studies, or quotations.\n- Avoid duplicating existing titles.\n- Return clean WordPress HTML between 900 and 1400 words.\n- Return JSON only.`;
 
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
