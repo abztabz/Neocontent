@@ -30,6 +30,23 @@ export class SupabaseRepository {
     return rows[0] ?? null;
   }
 
+  async consumeRequestSignature(siteId: string, signatureHash: string): Promise<void> {
+    try {
+      await this.request<Record<string, unknown>[]>("request_replay_guard", {
+        method: "POST",
+        body: JSON.stringify({
+          site_id: siteId,
+          signature_hash: signatureHash,
+          expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+        }),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/duplicate key|23505/i.test(message)) throw new Error("Signed request replay detected");
+      throw error;
+    }
+  }
+
   async listDueSites(limit = 20) {
     const query = new URLSearchParams({
       select: "*", enabled: "eq.true", next_run_at: `lte.${new Date().toISOString()}`,
