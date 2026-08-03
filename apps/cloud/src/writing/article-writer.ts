@@ -1,4 +1,7 @@
+export type ClaimCategory = "business" | "industry" | "timely" | "general_guidance";
+
 export interface ArticleSource {
+  id: string;
   title: string;
   publisher: string;
   url: string;
@@ -6,6 +9,13 @@ export interface ArticleSource {
   retrievedAt?: string;
   claimSupported: string;
   sourceType: string;
+}
+
+export interface ArticleClaim {
+  id: string;
+  text: string;
+  category: ClaimCategory;
+  sourceIds: string[];
 }
 
 export interface GeneratedArticle {
@@ -17,7 +27,7 @@ export interface GeneratedArticle {
   businessAlignmentScore: number;
   verificationScore: number;
   sources: ArticleSource[];
-  materialClaims: string[];
+  materialClaims: ArticleClaim[];
 }
 
 function outputText(payload: Record<string, unknown>): string {
@@ -45,7 +55,7 @@ export async function writeArticle(input: {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY is missing");
 
-  const prompt = `Create one evidence-backed WordPress blog for this business.\n\nBUSINESS\n${JSON.stringify(input.site)}\n\nAPPROVED BUSINESS KNOWLEDGE\n${JSON.stringify(input.approvedKnowledge)}\n\nAPPROVED EXTERNAL EVIDENCE\n${JSON.stringify(input.evidence)}\n\nEXISTING TITLES\n${JSON.stringify(input.existingTitles)}\n\nRules:\n- Never claim the business offers anything not present in approved business knowledge or the business profile.\n- Every material external fact must be supported by the supplied evidence.\n- Do not invent sources, dates, statistics, laws, studies, or quotations.\n- Avoid duplicating existing titles.\n- Return clean WordPress HTML between 900 and 1400 words.\n- If the evidence is insufficient, lower verificationScore below 70.\n- Return JSON only.`;
+  const prompt = `Create one evidence-backed WordPress blog for this business.\n\nBUSINESS\n${JSON.stringify(input.site)}\n\nAPPROVED BUSINESS KNOWLEDGE\n${JSON.stringify(input.approvedKnowledge)}\n\nAPPROVED EXTERNAL EVIDENCE\n${JSON.stringify(input.evidence)}\n\nEXISTING TITLES\n${JSON.stringify(input.existingTitles)}\n\nRules:\n- Never claim the business offers anything not present in approved business knowledge or the business profile.\n- Every material external fact must be supported by the supplied evidence.\n- Use the exact evidence source id when linking a claim to evidence.\n- Business claims must be supported by approved business knowledge, not by unrelated external evidence.\n- Timely claims require a current source.\n- General guidance may have an empty sourceIds array only when it makes no material external factual claim.\n- Do not invent sources, dates, statistics, laws, studies, or quotations.\n- Avoid duplicating existing titles.\n- Return clean WordPress HTML between 900 and 1400 words.\n- Return JSON only.`;
 
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -70,18 +80,36 @@ export async function writeArticle(input: {
               authorityScore: { type: "integer", minimum: 0, maximum: 100 },
               businessAlignmentScore: { type: "integer", minimum: 0, maximum: 100 },
               verificationScore: { type: "integer", minimum: 0, maximum: 100 },
-              materialClaims: { type: "array", items: { type: "string" } },
+              materialClaims: {
+                type: "array",
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    id: { type: "string" },
+                    text: { type: "string" },
+                    category: { type: "string", enum: ["business", "industry", "timely", "general_guidance"] },
+                    sourceIds: { type: "array", items: { type: "string" } }
+                  },
+                  required: ["id", "text", "category", "sourceIds"]
+                }
+              },
               sources: {
                 type: "array",
                 items: {
                   type: "object",
                   additionalProperties: false,
                   properties: {
-                    title: { type: "string" }, publisher: { type: "string" }, url: { type: "string" },
-                    publishedAt: { type: "string" }, retrievedAt: { type: "string" },
-                    claimSupported: { type: "string" }, sourceType: { type: "string" }
+                    id: { type: "string" },
+                    title: { type: "string" },
+                    publisher: { type: "string" },
+                    url: { type: "string" },
+                    publishedAt: { type: "string" },
+                    retrievedAt: { type: "string" },
+                    claimSupported: { type: "string" },
+                    sourceType: { type: "string" }
                   },
-                  required: ["title", "publisher", "url", "publishedAt", "retrievedAt", "claimSupported", "sourceType"]
+                  required: ["id", "title", "publisher", "url", "publishedAt", "retrievedAt", "claimSupported", "sourceType"]
                 }
               }
             },
