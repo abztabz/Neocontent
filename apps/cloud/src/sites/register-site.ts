@@ -20,15 +20,25 @@ export interface RegisterSiteInput {
   knowledgeReviewRequired?: boolean;
 }
 
-function requireHttps(value: string, label: string): string {
+function requireHttps(value: string, label: string): URL {
   const url = new URL(value);
   if (url.protocol !== "https:") throw new Error(`${label} must use HTTPS`);
-  return url.toString();
+  if (url.username || url.password) throw new Error(`${label} must not contain credentials`);
+  return url;
 }
 
 export async function registerSite(repository: SupabaseRepository, input: RegisterSiteInput) {
   if (!input.siteId || !input.siteSecret) throw new Error("Site credentials are required");
   if (input.siteSecret.length < 32) throw new Error("Site secret is too short");
+
+  const website = requireHttps(input.websiteUrl, "Website URL");
+  const callback = requireHttps(input.callbackUrl, "Callback URL");
+  if (website.hostname !== callback.hostname) {
+    throw new Error("WordPress callback must use the registered website hostname");
+  }
+  if (!callback.pathname.startsWith("/wp-json/neo-authority/v1/")) {
+    throw new Error("WordPress callback path is not recognized");
+  }
 
   const existing = await repository.findSiteByExternalId(input.siteId);
   const organizationId = existing?.organization_id
@@ -38,8 +48,8 @@ export async function registerSite(repository: SupabaseRepository, input: Regist
   return repository.upsertSite({
     organization_id: organizationId,
     external_site_id: input.siteId,
-    website_url: requireHttps(input.websiteUrl, "Website URL"),
-    callback_url: requireHttps(input.callbackUrl, "Callback URL"),
+    website_url: website.toString(),
+    callback_url: callback.toString(),
     encrypted_site_secret: encryptSecret(input.siteSecret),
     business_name: input.businessName,
     business_description: input.businessDescription ?? "",
