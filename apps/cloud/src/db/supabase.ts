@@ -30,6 +30,17 @@ export class SupabaseRepository {
     return rows[0] ?? null;
   }
 
+  async listDueSites(limit = 20) {
+    const query = new URLSearchParams({
+      select: "*",
+      enabled: "eq.true",
+      next_run_at: `lte.${new Date().toISOString()}`,
+      order: "next_run_at.asc",
+      limit: String(limit),
+    });
+    return this.request<Record<string, unknown>[]>(`sites?${query.toString()}`);
+  }
+
   async createOrganization(name: string) {
     const rows = await this.request<Record<string, unknown>[]>("organizations", { method: "POST", body: JSON.stringify({ name }) });
     return rows[0];
@@ -86,10 +97,7 @@ export class SupabaseRepository {
   }
 
   async updateArticle(id: string, patch: Record<string, unknown>) {
-    const rows = await this.request<Record<string, unknown>[]>(`articles?id=eq.${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: JSON.stringify(patch),
-    });
+    const rows = await this.request<Record<string, unknown>[]>(`articles?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
     return rows[0];
   }
 
