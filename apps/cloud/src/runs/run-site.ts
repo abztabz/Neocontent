@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { SupabaseRepository } from "../db/supabase.js";
-import { buildEvidencePackage } from "../research/research-pipeline.js";
+import { buildEvidencePackage, type SourceEvidence } from "../research/research-pipeline.js";
+import { researchIndustry } from "../research/live-research.js";
 import { writeArticle } from "../writing/article-writer.js";
 import { publishToWordPress } from "../publishing/wordpress-publisher.js";
 
@@ -34,7 +35,7 @@ export async function runSite(
       repository.listRecentArticles(String(site.id)),
     ]);
 
-    const evidence = buildEvidencePackage(sources.map((source) => ({
+    const customerEvidence: SourceEvidence[] = sources.map((source) => ({
       id: String(source.id),
       url: String(source.url),
       title: String(source.label || source.url),
@@ -42,10 +43,19 @@ export async function runSite(
       trustScore: Number(source.trust_score || 0),
       freshness: String(source.freshness_status || "unknown"),
       excerpts: Array.isArray(source.approved_claims) ? source.approved_claims.map(String) : [],
-    })));
+    }));
 
-    if (String(site.content_mode) === "industry_authority" && !evidence.publishable) {
-      throw new Error(evidence.reasons.join(" ") || "Industry authority mode requires approved evidence");
+    const shouldResearch = site.content_mode === "balanced" || site.content_mode === "industry_authority";
+    const liveEvidence = shouldResearch
+      ? await researchIndustry({
+          industry: String(site.industry || "the business industry"),
+          audience: String(site.target_audience || "the business audience"),
+        })
+      : [];
+
+    const evidence = buildEvidencePackage([...customerEvidence, ...liveEvidence]);
+    if (site.content_mode === "industry_authority" && !evidence.publishable) {
+      throw new Error(evidence.reasons.join(" ") || "Industry authority mode requires verified evidence");
     }
 
     const article = await writeArticle({
@@ -57,6 +67,9 @@ export async function runSite(
 
     if (article.businessAlignmentScore < 80) throw new Error("Business alignment score is below the V1 threshold");
     if (article.verificationScore < 70) throw new Error("Verification score is below the V1 threshold");
+    if (site.content_mode === "industry_authority" && article.sources.length === 0) {
+      throw new Error("Industry authority articles require visible source records");
+    }
 
     const record = await repository.insertArticle({
       organization_id: site.organization_id,
