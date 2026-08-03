@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Neo Authority Engine
  * Description: Governed business knowledge, trusted sources, and evidence-backed blog automation.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: 108 Media
  * Requires at least: 6.2
  * Requires PHP: 8.0
@@ -10,7 +10,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('NAE_VERSION', '1.0.0');
+define('NAE_VERSION', '1.0.1');
 define('NAE_OPTION', 'nae_v1_settings');
 define('NAE_SOURCES', 'nae_v1_sources');
 define('NAE_KNOWLEDGE', 'nae_v1_knowledge');
