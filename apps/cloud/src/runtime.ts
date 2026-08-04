@@ -11,8 +11,9 @@ export function requireEnvironment(): void {
   const required = [
     "SUPABASE_URL",
     "SUPABASE_SERVICE_ROLE_KEY",
-    "OPENAI_API_KEY",
     "NEO_SECRET_ENCRYPTION_KEY",
+    "NEO_REGISTRATION_TOKEN",
+    "NEO_OPERATOR_TOKEN",
   ];
   const missing = required.filter((name) => !process.env[name]);
   if (missing.length) throw new Error(`Missing environment variables: ${missing.join(", ")}`);

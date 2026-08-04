@@ -13,6 +13,7 @@ export interface SignedRequestLike {
 export async function authenticateSiteRequest(
   repository: SupabaseRepository,
   request: SignedRequestLike,
+  expectedExternalSiteId?: string,
 ) {
   const siteId = request.headers["x-neo-site-id"] ?? "";
   const timestamp = request.headers["x-neo-timestamp"] ?? "";
@@ -20,6 +21,9 @@ export async function authenticateSiteRequest(
 
   if (!siteId || !timestamp || !suppliedSignature) {
     throw new Error("Missing signed request headers");
+  }
+  if (expectedExternalSiteId && siteId !== expectedExternalSiteId) {
+    throw new Error("Signed site identifier does not match the requested route");
   }
 
   const site = await repository.findSiteByExternalId(siteId);
@@ -33,6 +37,7 @@ export async function authenticateSiteRequest(
     body: request.body,
     signature: suppliedSignature,
     secret: decryptSecret(encryptedSecret),
+    purpose: "plugin-to-cloud",
     now: Date.now(),
   });
   if (!valid) throw new Error("Invalid or stale request signature");

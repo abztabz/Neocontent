@@ -8,12 +8,15 @@ export default async function handler(request: VercelRequestLike, response: Verc
     const siteId = String(request.query.siteId ?? "");
     const path = `/api/v1/sites/${siteId}/knowledge-candidates`;
     const payload = request.body as { candidates?: unknown[] };
+    if (!Array.isArray(payload.candidates) || payload.candidates.length > 100) {
+      throw new Error("Knowledge candidates must be an array of at most 100 items");
+    }
     const result = await handleKnowledgeCandidates({
       method: "POST",
       path,
       body: rawBody(request),
       headers: normalizedHeaders(request),
-    }, (payload.candidates ?? []) as never[]);
+    }, siteId, payload.candidates as never[]);
     response.status(result.status).json(result.body);
   } catch (error) {
     sendError(response, error);

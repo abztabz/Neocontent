@@ -4,8 +4,9 @@
 
 - Vercel project with Root Directory set to `apps/cloud`
 - Supabase PostgreSQL project
-- OpenAI API project with Responses API access
 - HTTPS WordPress test site with administrator access
+
+The operator-managed workflow uses the operator's existing ChatGPT access. Customers never receive ChatGPT, prompt, briefing, JSON-import, model, or API controls. An OpenAI API key is optional and is required only if a future site is explicitly migrated to automated cloud generation.
 
 ## 1. Database
 
@@ -14,24 +15,31 @@ Apply migrations in order:
 1. `supabase/migrations/001_v1_foundation.sql`
 2. `supabase/migrations/002_source_review_suggestions.sql`
 3. `supabase/migrations/003_request_replay_guard.sql`
+4. `supabase/migrations/004_security_hardening.sql`
+5. `supabase/migrations/005_operator_content_queue.sql`
 
 After applying migrations, run Supabase security and performance advisors. The service-role key must remain server-side and must never be added to WordPress.
 
 ## 2. Cloud environment
 
-Configure these Vercel environment variables for Preview and Production:
+Configure these Vercel environment variables for Production:
 
 ```text
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
-OPENAI_API_KEY=
+OPENAI_API_KEY= # optional; leave unset for operator-managed-only deployments
 OPENAI_MODEL=gpt-5-mini
 OPENAI_RESEARCH_MODEL=gpt-5-mini
 NEO_SECRET_ENCRYPTION_KEY=
 CRON_SECRET=
+NEO_REGISTRATION_TOKEN=
+NEO_OPERATOR_TOKEN=
+NEO_MAX_MANUAL_RUNS_PER_HOUR=3
 ```
 
-Generate `NEO_SECRET_ENCRYPTION_KEY` as 32 random bytes encoded in base64. Generate `CRON_SECRET` as an independent high-entropy secret.
+Generate `NEO_SECRET_ENCRYPTION_KEY` as 32 random bytes encoded in base64. Generate `CRON_SECRET`, `NEO_REGISTRATION_TOKEN`, and `NEO_OPERATOR_TOKEN` as independent high-entropy secrets of at least 32 characters. The registration token is presented to customers as a NeoContent license key, entered once, and never stored by the plugin. The operator token must remain private to the NeoOS operator.
+
+Do not expose Production secrets to Preview deployments. Use a separate Supabase project and separate OpenAI, encryption, cron, and registration credentials for Preview, or disable Preview environment access until that isolation exists.
 
 ## 3. Vercel
 
@@ -43,33 +51,22 @@ Generate `NEO_SECRET_ENCRYPTION_KEY` as 32 random bytes encoded in base64. Gener
 
 ## 4. WordPress
 
-Download the `neo-authority-engine-wordpress-v1` artifact from the latest successful CI run and upload the ZIP under **Plugins → Add New → Upload Plugin**.
+Download the `neo-authority-engine-wordpress-v1.3.0` artifact from the latest successful CI run and upload the ZIP under **Plugins → Add New → Upload Plugin**.
 
-In **Neo Authority → Settings**:
+During activation:
 
-1. Enter the Vercel deployment URL.
-2. Complete the business profile.
-3. Select **Save for approval** for the first test.
-4. Select **Balanced** or **Industry authority**.
-5. Save settings.
-6. Register/sync the site.
+1. Complete the business profile.
+2. Choose the content focus and cadence.
+3. Enter the NeoContent license key.
+4. Activate the service.
 
-In **Knowledge Review**:
+For first registration, enter the one-time enrollment token from `NEO_REGISTRATION_TOKEN`. Existing registered sites authenticate future profile synchronization with their site-specific secret and no longer need the enrollment token.
 
-1. Scan the website.
-2. Review every candidate.
-3. Approve only accurate business statements.
-
-In **Neo Authority**:
-
-1. Add at least one authoritative source URL.
-2. Review the trust and freshness assessment.
-3. Select the evidence statements the engine may use.
-4. Approve the source.
+After activation, the customer sees only **Researching** and **Drafts**. Private briefs and completed JSON are accessible only at `/api/operator` after operator authentication.
 
 ## 5. End-to-end acceptance gate
 
-Run **Generate blog now** and verify:
+Allow or trigger the first operator sync and verify:
 
 - exactly one WordPress draft is created;
 - the title does not duplicate an existing article;
@@ -78,7 +75,12 @@ Run **Generate blog now** and verify:
 - source URLs, publishers, dates, and retrieval records are retained;
 - the article is blocked when evidence is insufficient;
 - replaying the same request does not create another post;
-- pending knowledge changes block the run;
-- the run and article records are stored in Supabase.
+- the customer status endpoint never returns `brief_payload`, `draft_payload`, or operator feedback;
+- the operator can retrieve the private brief and deliver a valid completed JSON draft;
+- invalid operator sessions and CSRF tokens are rejected;
+- the customer can edit, approve/publish, reject, or request changes;
+- revisions replace only the existing unpublished draft;
+- operator-managed sites never enter the paid-model cron path;
+- job and review states are stored in Supabase.
 
 Only after this gate passes should the PR be marked ready and the Vercel deployment promoted to Production.

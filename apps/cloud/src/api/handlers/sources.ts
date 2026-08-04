@@ -4,10 +4,11 @@ import { addSource, decideSource, type AddSourceRequest } from "../source-routes
 
 export async function handleAddSource(
   request: SignedRequestLike,
+  expectedExternalSiteId: string,
   payload: Omit<AddSourceRequest, "siteId" | "organizationId">,
 ) {
   const repository = createRepository();
-  const site = await authenticateSiteRequest(repository, request);
+  const site = await authenticateSiteRequest(repository, request, expectedExternalSiteId);
   const result = await addSource(repository, {
     ...payload,
     organizationId: String(site.organization_id),
@@ -18,12 +19,13 @@ export async function handleAddSource(
 
 export async function handleSourceDecision(
   request: SignedRequestLike,
+  expectedExternalSiteId: string,
   sourceId: string,
   decision: "approve" | "reject",
   approvedClaims: string[] = [],
 ) {
   const repository = createRepository();
-  await authenticateSiteRequest(repository, request);
-  const result = await decideSource(repository, sourceId, decision, approvedClaims);
+  const site = await authenticateSiteRequest(repository, request, expectedExternalSiteId);
+  const result = await decideSource(repository, String(site.id), sourceId, decision, approvedClaims);
   return { status: 200, body: result ?? {} };
 }

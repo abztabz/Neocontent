@@ -13,7 +13,7 @@ export default async function handler(request: VercelRequestLike, response: Verc
       path,
       body,
       headers: normalizedHeaders(request),
-    }, request.body as { url: string; label?: string; purpose: "business_knowledge" | "industry_research" | "preferred_research" | "topic_discovery_only" });
+    }, siteId, request.body as { url: string; label?: string; purpose: "business_knowledge" | "industry_research" | "preferred_research" | "topic_discovery_only" });
     response.status(result.status).json(result.body);
   } catch (error) {
     sendError(response, error);

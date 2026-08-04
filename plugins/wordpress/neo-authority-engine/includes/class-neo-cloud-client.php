@@ -4,11 +4,13 @@ if (!defined('ABSPATH')) exit;
 
 final class Neo_Cloud_Client {
     private function settings(): array {
-        return wp_parse_args(get_option(NAE_OPTION, []), [
+        $settings = wp_parse_args(get_option(NAE_OPTION, []), [
             'cloud_url' => '',
             'site_id' => '',
-            'site_secret' => '',
+            'registered' => '0',
         ]);
+        $settings['site_secret'] = Neo_Secret_Store::get();
+        return $settings;
     }
 
     private function canonicalize_json_value($value) {
@@ -33,27 +35,46 @@ final class Neo_Cloud_Client {
         return is_string($encoded) ? $encoded : '{}';
     }
 
-    private function headers(string $method, string $path, string $body): array {
+    private function headers(string $method, string $path, string $body, string $purpose = 'plugin-to-cloud'): array {
         $settings = $this->settings();
         $timestamp = (string) time();
         $canonical = strtoupper($method) . "\n" . $path . "\n" . $timestamp . "\n" . hash('sha256', $body);
+        $labels = [
+            'plugin-to-cloud' => 'neo-plugin-to-cloud-v1',
+            'registration' => 'neo-registration-v1',
+        ];
+        if (!isset($labels[$purpose])) return [];
+        $signing_key = hash_hmac('sha256', $labels[$purpose], $settings['site_secret'], true);
         return [
             'Content-Type' => 'application/json',
             'X-Neo-Site-ID' => $settings['site_id'],
             'X-Neo-Timestamp' => $timestamp,
-            'X-Neo-Signature' => hash_hmac('sha256', $canonical, $settings['site_secret']),
+            'X-Neo-Signature' => hash_hmac('sha256', $canonical, $signing_key),
         ];
     }
 
-    public function request(string $method, string $path, array $payload = []) {
+    private function valid_cloud_url(string $value): bool {
+        $parts = wp_parse_url($value);
+        if (!is_array($parts) || strtolower((string)($parts['scheme'] ?? '')) !== 'https') return false;
+        if (!empty($parts['user']) || !empty($parts['pass']) || (!empty($parts['port']) && (int)$parts['port'] !== 443)) return false;
+        $allowed = apply_filters('nae_allowed_cloud_hosts', ['living-content-engine.vercel.app']);
+        $allowed = is_array($allowed) ? array_map(static fn($host) => strtolower((string)$host), $allowed) : [];
+        return in_array(strtolower((string)($parts['host'] ?? '')), $allowed, true);
+    }
+
+    public function request(string $method, string $path, array $payload = [], array $extra_headers = [], string $purpose = 'plugin-to-cloud') {
         $settings = $this->settings();
         if (empty($settings['cloud_url'])) return new WP_Error('nae_cloud_missing', 'Neo Authority Cloud URL is not configured.');
+        if (!$this->valid_cloud_url((string)$settings['cloud_url'])) return new WP_Error('nae_cloud_invalid', 'Neo Authority Cloud URL is not trusted.');
+        if (strlen((string)$settings['site_secret']) < 32) return new WP_Error('nae_secret_invalid', 'Neo Authority site secret is unavailable.');
 
         $body = $payload ? $this->canonical_json($payload) : '';
+        $headers = array_merge($this->headers($method, $path, $body, $purpose), $extra_headers);
+        if (!$headers) return new WP_Error('nae_signing_failed', 'Neo Authority request signing failed.');
         $response = wp_remote_request(untrailingslashit($settings['cloud_url']) . $path, [
             'method' => $method,
             'timeout' => 90,
-            'headers' => $this->headers($method, $path, $body),
+            'headers' => $headers,
             'body' => $body,
         ]);
         if (is_wp_error($response)) return $response;
@@ -69,15 +90,17 @@ final class Neo_Cloud_Client {
         return is_array($decoded) ? $decoded : [];
     }
 
-    public function register_site(array $profile) {
+    public function register_site(array $profile, string $enrollment_token = '') {
         $settings = $this->settings();
+        $initial = ($settings['registered'] ?? '0') !== '1';
+        $extra_headers = $initial && $enrollment_token !== '' ? ['X-Neo-Enrollment-Token' => $enrollment_token] : [];
         return $this->request('POST', '/api/v1/sites/register', [
             'siteId' => $settings['site_id'],
             'siteSecret' => $settings['site_secret'],
             'websiteUrl' => home_url('/'),
             'callbackUrl' => rest_url('neo-authority/v1/publish'),
             ...$profile,
-        ]);
+        ], $extra_headers, $initial ? 'registration' : 'plugin-to-cloud');
     }
 
     public function sync_knowledge_candidates(array $candidates) {
@@ -118,6 +141,33 @@ final class Neo_Cloud_Client {
             'POST',
             '/api/v1/sites/' . rawurlencode($settings['site_id']) . '/runs',
             ['trigger' => 'manual', 'idempotencyKey' => wp_generate_uuid4()]
+        );
+    }
+
+    public function create_content_job(array $payload) {
+        $settings = $this->settings();
+        return $this->request(
+            'POST',
+            '/api/v1/sites/' . rawurlencode($settings['site_id']) . '/content-jobs',
+            array_merge(['action' => 'create'], $payload)
+        );
+    }
+
+    public function list_content_jobs() {
+        $settings = $this->settings();
+        return $this->request(
+            'POST',
+            '/api/v1/sites/' . rawurlencode($settings['site_id']) . '/content-jobs',
+            ['action' => 'list']
+        );
+    }
+
+    public function review_content_job(string $job_id, string $decision, string $feedback = '') {
+        $settings = $this->settings();
+        return $this->request(
+            'POST',
+            '/api/v1/sites/' . rawurlencode($settings['site_id']) . '/content-jobs',
+            ['action' => 'review', 'jobId' => $job_id, 'decision' => $decision, 'feedback' => $feedback]
         );
     }
 }
