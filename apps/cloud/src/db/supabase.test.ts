@@ -46,8 +46,26 @@ test("customer content-job queries exclude private brief and draft payloads", as
     await repository.listCustomerContentJobs("site-a");
     const select = new URL(requestedUrl).searchParams.get("select") ?? "";
     assert.match(select, /topic/);
-    assert.doesNotMatch(select, /brief_payload|draft_payload|customer_feedback/);
+    assert.doesNotMatch(select, /brief_payload|draft_payload|customer_feedback|operator_note|audit/);
     assert.equal(new URL(requestedUrl).searchParams.get("site_id"), "eq.site-a");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("operator audit queries select metadata only and never private content", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = "";
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    requestedUrl = String(input);
+    return new Response("[]", { status: 200 });
+  }) as typeof fetch;
+  try {
+    const repository = new SupabaseRepository({ url: "https://example.supabase.co", serviceRoleKey: "test-key" });
+    await repository.listOperatorAuditEvents();
+    const select = new URL(requestedUrl).searchParams.get("select") ?? "";
+    assert.match(select, /event_type|actor_type|outcome|occurred_at/);
+    assert.doesNotMatch(select, /brief|draft|feedback|operator_note/);
   } finally {
     globalThis.fetch = originalFetch;
   }

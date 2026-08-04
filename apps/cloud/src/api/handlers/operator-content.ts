@@ -41,6 +41,15 @@ export async function handleCustomerContentJobs(
       customer_feedback: feedback,
       reviewed_at: new Date().toISOString(),
     });
+    await repository.insertOperatorAuditEvent({
+      organization_id: site.organization_id,
+      site_id: site.id,
+      job_id: payload.jobId,
+      event_type: `customer_${payload.decision === "changes_requested" ? "changes_requested" : payload.decision}`,
+      actor_type: "customer",
+      outcome: "success",
+      metadata: {},
+    });
     return { status: 200, body: { job: { id: job.id, status: job.status, reviewed_at: job.reviewed_at } } };
   }
   if (payload.action !== "create") throw new Error("Content job action is not recognized");
@@ -65,6 +74,15 @@ export async function handleCustomerContentJobs(
     status: "brief_ready",
     brief_payload: payload.brief,
     idempotency_key: payload.idempotencyKey,
+  });
+  if (job) await repository.insertOperatorAuditEvent({
+    organization_id: site.organization_id,
+    site_id: site.id,
+    job_id: job.id,
+    event_type: "content_job_created",
+    actor_type: "system",
+    outcome: "success",
+    metadata: {},
   });
   return {
     status: 201,
