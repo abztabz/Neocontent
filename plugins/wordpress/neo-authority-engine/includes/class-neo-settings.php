@@ -7,11 +7,13 @@ final class Neo_Settings {
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_init', [$this, 'register']);
         add_action('admin_post_nae_register_site', [$this, 'register_site']);
-        add_action('admin_post_nae_run_now', [$this, 'run_now']);
     }
 
     public function menu(): void {
-        add_submenu_page('neo-authority', 'Settings', 'Settings', 'manage_options', 'neo-authority-settings', [$this, 'page']);
+        $settings = get_option(NAE_OPTION, []);
+        if (($settings['registered'] ?? '0') !== '1') {
+            add_submenu_page('neo-authority', 'Activate NeoContent', 'Activate', 'manage_options', 'neo-authority-settings', [$this, 'page']);
+        }
     }
 
     public function register(): void {
@@ -22,11 +24,12 @@ final class Neo_Settings {
     }
 
     public function sanitize($input): array {
+        Neo_Secret_Store::get();
         $current = get_option(NAE_OPTION, []);
         return [
-            'cloud_url' => esc_url_raw(trim((string)($input['cloud_url'] ?? ''))),
+            'cloud_url' => sanitize_text_field((string)($current['cloud_url'] ?? 'https://living-content-engine.vercel.app')),
             'site_id' => sanitize_text_field($current['site_id'] ?? wp_generate_uuid4()),
-            'site_secret' => sanitize_text_field($current['site_secret'] ?? wp_generate_password(64, false, false)),
+            'site_secret_encrypted' => sanitize_text_field($current['site_secret_encrypted'] ?? ''),
             'business_name' => sanitize_text_field($input['business_name'] ?? get_bloginfo('name')),
             'business_description' => sanitize_textarea_field($input['business_description'] ?? get_bloginfo('description')),
             'industry' => sanitize_text_field($input['industry'] ?? ''),
@@ -34,12 +37,46 @@ final class Neo_Settings {
             'tone' => sanitize_text_field($input['tone'] ?? 'Clear, useful, trustworthy and professional'),
             'services' => sanitize_textarea_field($input['services'] ?? ''),
             'locations' => sanitize_text_field($input['locations'] ?? ''),
-            'publish_mode' => in_array($input['publish_mode'] ?? '', ['auto', 'approval_required'], true) ? $input['publish_mode'] : 'approval_required',
+            'manual_source_urls' => sanitize_textarea_field((string)($current['manual_source_urls'] ?? '')),
+            'publish_mode' => 'approval_required',
             'content_mode' => in_array($input['content_mode'] ?? '', ['business_focused', 'balanced', 'industry_authority'], true) ? $input['content_mode'] : 'balanced',
             'cadence' => in_array($input['cadence'] ?? '', ['daily', 'weekly', 'biweekly', 'monthly'], true) ? $input['cadence'] : 'weekly',
-            'knowledge_review_required' => isset($input['knowledge_review_required']) ? '1' : '0',
+            'generation_mode' => 'operator_managed',
+            'knowledge_review_required' => '0',
             'registered' => sanitize_text_field($current['registered'] ?? '0'),
         ];
+    }
+
+    private function sanitize_manual_source_urls(string $value): string {
+        $safe = [];
+        foreach (array_slice(preg_split('/\R/', $value) ?: [], 0, 20) as $line) {
+            $url = esc_url_raw(trim((string)$line), ['https']);
+            if ($url === '' || !wp_http_validate_url($url)) continue;
+            $host = strtolower((string)wp_parse_url($url, PHP_URL_HOST));
+            if ($host === 'localhost' || str_ends_with($host, '.local') || str_ends_with($host, '.internal')) continue;
+            if (filter_var($host, FILTER_VALIDATE_IP)
+                && !filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) continue;
+            $safe[] = $url;
+        }
+        return implode("\n", array_values(array_unique($safe)));
+    }
+
+    private function sanitize_cloud_url(string $value, string $current): string {
+        if (trim($value) === '') return '';
+        $url = esc_url_raw(trim($value), ['https']);
+        $parts = wp_parse_url($url);
+        $allowed = apply_filters('nae_allowed_cloud_hosts', ['living-content-engine.vercel.app']);
+        $allowed = is_array($allowed) ? array_map(static fn($host) => strtolower((string)$host), $allowed) : [];
+        $valid = is_array($parts)
+            && strtolower((string)($parts['scheme'] ?? '')) === 'https'
+            && empty($parts['user']) && empty($parts['pass'])
+            && (empty($parts['port']) || (int)$parts['port'] === 443)
+            && in_array(strtolower((string)($parts['host'] ?? '')), $allowed, true);
+        if (!$valid) {
+            add_settings_error(NAE_OPTION, 'nae_cloud_url_invalid', 'Use the approved Neo Authority HTTPS cloud URL.');
+            return $current;
+        }
+        return untrailingslashit($url);
     }
 
     public function page(): void {
@@ -48,14 +85,15 @@ final class Neo_Settings {
             'business_name' => get_bloginfo('name'), 'business_description' => get_bloginfo('description'),
             'industry' => '', 'target_audience' => '', 'tone' => 'Clear, useful, trustworthy and professional',
             'services' => '', 'locations' => '', 'cloud_url' => '', 'publish_mode' => 'approval_required',
+            'manual_source_urls' => '',
             'content_mode' => 'balanced', 'cadence' => 'weekly', 'knowledge_review_required' => '1', 'registered' => '0',
+            'generation_mode' => 'operator_managed',
         ]);
         ?>
-        <div class="wrap"><h1>Neo Authority Settings</h1>
+        <div class="wrap"><h1>Activate NeoContent</h1>
             <?php if (!empty($_GET['nae_message'])): ?><div class="notice notice-info"><p><?php echo esc_html(wp_unslash($_GET['nae_message'])); ?></p></div><?php endif; ?>
             <form method="post" action="options.php"><?php settings_fields('nae_v1_group'); ?>
                 <table class="form-table">
-                    <tr><th>Cloud URL</th><td><input class="regular-text code" type="url" name="<?php echo NAE_OPTION; ?>[cloud_url]" value="<?php echo esc_attr($s['cloud_url']); ?>"></td></tr>
                     <tr><th>Business name</th><td><input class="regular-text" name="<?php echo NAE_OPTION; ?>[business_name]" value="<?php echo esc_attr($s['business_name']); ?>"></td></tr>
                     <tr><th>Description</th><td><textarea class="large-text" rows="3" name="<?php echo NAE_OPTION; ?>[business_description]"><?php echo esc_textarea($s['business_description']); ?></textarea></td></tr>
                     <tr><th>Industry</th><td><input class="regular-text" name="<?php echo NAE_OPTION; ?>[industry]" value="<?php echo esc_attr($s['industry']); ?>"></td></tr>
@@ -64,19 +102,20 @@ final class Neo_Settings {
                     <tr><th>Locations</th><td><input class="regular-text" name="<?php echo NAE_OPTION; ?>[locations]" value="<?php echo esc_attr($s['locations']); ?>"></td></tr>
                     <tr><th>Tone</th><td><input class="regular-text" name="<?php echo NAE_OPTION; ?>[tone]" value="<?php echo esc_attr($s['tone']); ?>"></td></tr>
                     <tr><th>Content mode</th><td><select name="<?php echo NAE_OPTION; ?>[content_mode]"><option value="business_focused" <?php selected($s['content_mode'], 'business_focused'); ?>>Business focused</option><option value="balanced" <?php selected($s['content_mode'], 'balanced'); ?>>Balanced</option><option value="industry_authority" <?php selected($s['content_mode'], 'industry_authority'); ?>>Industry authority</option></select></td></tr>
-                    <tr><th>Publishing</th><td><select name="<?php echo NAE_OPTION; ?>[publish_mode]"><option value="approval_required" <?php selected($s['publish_mode'], 'approval_required'); ?>>Save for approval</option><option value="auto" <?php selected($s['publish_mode'], 'auto'); ?>>Auto-publish</option></select></td></tr>
                     <tr><th>Cadence</th><td><select name="<?php echo NAE_OPTION; ?>[cadence]"><option value="daily" <?php selected($s['cadence'], 'daily'); ?>>Daily</option><option value="weekly" <?php selected($s['cadence'], 'weekly'); ?>>Weekly</option><option value="biweekly" <?php selected($s['cadence'], 'biweekly'); ?>>Every two weeks</option><option value="monthly" <?php selected($s['cadence'], 'monthly'); ?>>Monthly</option></select></td></tr>
-                    <tr><th>Knowledge governance</th><td><label><input type="checkbox" name="<?php echo NAE_OPTION; ?>[knowledge_review_required]" value="1" <?php checked($s['knowledge_review_required'], '1'); ?>> Require approval before new website knowledge is used</label></td></tr>
                 </table><?php submit_button('Save settings'); ?>
             </form>
-            <hr><p>Cloud registration: <strong><?php echo $s['registered'] === '1' ? 'Connected' : 'Not connected'; ?></strong></p>
-            <div style="display:flex;gap:10px"><form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><?php wp_nonce_field('nae_register_site'); ?><input type="hidden" name="action" value="nae_register_site"><?php submit_button('Register / sync site', 'secondary', 'submit', false); ?></form>
-            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><?php wp_nonce_field('nae_run_now'); ?><input type="hidden" name="action" value="nae_run_now"><?php submit_button('Generate blog now', 'primary', 'submit', false); ?></form></div>
+            <hr><p>Service status: <strong><?php echo $s['registered'] === '1' ? 'Active' : 'Activation required'; ?></strong></p>
+            <?php if ($s['registered'] !== '1'): ?><form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><?php wp_nonce_field('nae_register_site'); ?><input type="hidden" name="action" value="nae_register_site"><label>NeoContent license key <input type="password" name="nae_enrollment_token" minlength="32" maxlength="256" required autocomplete="off"></label> <?php submit_button('Activate NeoContent', 'primary', 'submit', false); ?></form><?php endif; ?>
         </div><?php
     }
 
     public function register_site(): void {
         $this->authorize('nae_register_site'); $s = get_option(NAE_OPTION, []);
+        $enrollment_token = trim((string)wp_unslash($_POST['nae_enrollment_token'] ?? ''));
+        if (($s['registered'] ?? '0') !== '1' && (strlen($enrollment_token) < 32 || strlen($enrollment_token) > 256)) {
+            $this->redirect('A valid enrollment token is required for first registration.');
+        }
         $result = $this->client->register_site([
             'businessName' => $s['business_name'] ?? get_bloginfo('name'), 'businessDescription' => $s['business_description'] ?? '',
             'industry' => $s['industry'] ?? '', 'targetAudience' => $s['target_audience'] ?? '', 'tone' => $s['tone'] ?? '',
@@ -84,14 +123,13 @@ final class Neo_Settings {
             'locations' => array_values(array_filter(array_map('trim', explode(',', $s['locations'] ?? '')))),
             'contentMode' => $s['content_mode'] ?? 'balanced', 'publishMode' => $s['publish_mode'] ?? 'approval_required',
             'cadence' => $s['cadence'] ?? 'weekly', 'knowledgeReviewRequired' => ($s['knowledge_review_required'] ?? '1') === '1',
-        ]);
-        if (!is_wp_error($result)) { $s['registered'] = '1'; update_option(NAE_OPTION, $s, false); }
+        ], $enrollment_token);
+        if (!is_wp_error($result)) {
+            $s['registered'] = '1';
+            update_option(NAE_OPTION, $s, false);
+            wp_schedule_single_event(time() + 10, 'nae_operator_sync');
+        }
         $this->redirect(is_wp_error($result) ? $result->get_error_message() : 'Site registered and synchronized.');
-    }
-
-    public function run_now(): void {
-        $this->authorize('nae_run_now'); $result = $this->client->run_now();
-        $this->redirect(is_wp_error($result) ? $result->get_error_message() : 'Content run completed.');
     }
 
     private function authorize(string $nonce): void { if (!current_user_can('manage_options')) wp_die('Not allowed'); check_admin_referer($nonce); }

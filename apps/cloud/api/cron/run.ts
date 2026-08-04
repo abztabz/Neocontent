@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { createRepository } from "../../src/runtime.js";
 import { runSite } from "../../src/runs/run-site.js";
 import type { VercelRequestLike, VercelResponseLike } from "../_http.js";
@@ -9,7 +9,11 @@ export default async function handler(request: VercelRequestLike, response: Verc
     const authorization = Array.isArray(request.headers.authorization)
       ? request.headers.authorization[0]
       : request.headers.authorization;
-    if (!process.env.CRON_SECRET || authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+    const supplied = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
+    const expected = process.env.CRON_SECRET ?? "";
+    const suppliedHash = createHash("sha256").update(supplied).digest();
+    const expectedHash = createHash("sha256").update(expected).digest();
+    if (!supplied || !expected || !timingSafeEqual(suppliedHash, expectedHash)) {
       return response.status(401).json({ error: { code: "UNAUTHORIZED", message: "Invalid cron authorization" } });
     }
 

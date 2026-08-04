@@ -28,6 +28,9 @@ export interface GeneratedArticle {
   verificationScore: number;
   sources: ArticleSource[];
   materialClaims: ArticleClaim[];
+  seoTitle?: string;
+  metaDescription?: string;
+  focusKeyphrase?: string;
 }
 
 function outputText(payload: Record<string, unknown>): string {
@@ -55,6 +58,25 @@ export async function writeArticle(input: {
 }): Promise<GeneratedArticle> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY is missing");
+
+  input = {
+    ...input,
+    site: {
+      business_name: String(input.site.business_name ?? ""),
+      business_description: String(input.site.business_description ?? ""),
+      industry: String(input.site.industry ?? ""),
+      target_audience: String(input.site.target_audience ?? ""),
+      tone: String(input.site.tone ?? ""),
+      services: Array.isArray(input.site.services) ? input.site.services.map(String).slice(0, 50) : [],
+      locations: Array.isArray(input.site.locations) ? input.site.locations.map(String).slice(0, 50) : [],
+      content_mode: String(input.site.content_mode ?? "balanced"),
+    },
+    approvedKnowledge: input.approvedKnowledge.map((item) => ({
+      title: String(item.title ?? ""),
+      content: String(item.content ?? ""),
+      source_type: String(item.source_type ?? "website"),
+    })),
+  };
 
   const prompt = `Create one evidence-backed WordPress blog for this business.\n\nSELECTED CONTENT OPPORTUNITY\n${JSON.stringify(input.opportunity)}\n\nBUSINESS\n${JSON.stringify(input.site)}\n\nAPPROVED BUSINESS KNOWLEDGE\n${JSON.stringify(input.approvedKnowledge)}\n\nAPPROVED EXTERNAL EVIDENCE\n${JSON.stringify(input.evidence)}\n\nEXISTING TITLES\n${JSON.stringify(input.existingTitles)}\n\nRules:\n- Follow the selected content opportunity and preserve its audience intent.\n- Never claim the business offers anything not present in approved business knowledge or the business profile.\n- Every material external fact must be supported by the supplied evidence.\n- Use the exact evidence source id when linking a claim to evidence.\n- Business claims must be supported by approved business knowledge, not by unrelated external evidence.\n- Timely claims require a current source.\n- General guidance may have an empty sourceIds array only when it makes no material external factual claim.\n- Do not invent sources, dates, statistics, laws, studies, or quotations.\n- Avoid duplicating existing titles.\n- Return clean WordPress HTML between 900 and 1400 words.\n- Return JSON only.`;
 
@@ -118,5 +140,10 @@ export async function writeArticle(input: {
 
   const payload = await response.json() as Record<string, unknown>;
   if (!response.ok) throw new Error(`OpenAI ${response.status}: ${JSON.stringify(payload)}`);
-  return JSON.parse(outputText(payload)) as GeneratedArticle;
+  const article = JSON.parse(outputText(payload)) as GeneratedArticle;
+  if (!article.title || article.title.length > 1_000) throw new Error("Generated article title is invalid");
+  if (!article.body || article.body.length > 500_000) throw new Error("Generated article body is invalid");
+  if (article.excerpt.length > 8_000 || article.rationale.length > 20_000) throw new Error("Generated article metadata is invalid");
+  if (article.sources.length > 50 || article.materialClaims.length > 100) throw new Error("Generated article contains too many evidence records");
+  return article;
 }

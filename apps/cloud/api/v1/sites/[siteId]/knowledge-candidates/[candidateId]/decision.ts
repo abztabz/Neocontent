@@ -14,7 +14,7 @@ export default async function handler(request: VercelRequestLike, response: Verc
       path,
       body: rawBody(request),
       headers: normalizedHeaders(request),
-    }, candidateId, payload.decision, payload.editedContent);
+    }, siteId, candidateId, payload.decision, payload.editedContent);
     response.status(result.status).json(result.body);
   } catch (error) {
     sendError(response, error);

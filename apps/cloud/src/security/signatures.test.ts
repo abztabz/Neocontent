@@ -52,3 +52,12 @@ test("rejects stale timestamps", () => {
   const signature = signRequest({ secret, method: "POST", path: "/api/v1/test", timestamp, body: "" });
   assert.equal(verifyRequest({ secret, method: "POST", path: "/api/v1/test", timestamp, body: "", signature, now: now + 301_000 }), false);
 });
+
+test("separates plugin and WordPress signing directions", () => {
+  const body = canonicalJson({ ok: true });
+  const pluginSignature = signRequest({ secret, purpose: "plugin-to-cloud", method: "POST", path: "/api/v1/test", timestamp, body });
+  assert.equal(
+    verifyRequest({ secret, purpose: "cloud-to-wordpress", method: "POST", path: "/api/v1/test", timestamp, body, signature: pluginSignature, now }),
+    false,
+  );
+});

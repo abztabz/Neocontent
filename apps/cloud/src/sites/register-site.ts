@@ -21,29 +21,57 @@ export interface RegisterSiteInput {
 }
 
 function requireHttps(value: string, label: string): URL {
+  if (typeof value !== "string" || value.length > 2048) throw new Error(`${label} is invalid`);
   const url = new URL(value);
   if (url.protocol !== "https:") throw new Error(`${label} must use HTTPS`);
   if (url.username || url.password) throw new Error(`${label} must not contain credentials`);
+  if (url.port && url.port !== "443") throw new Error(`${label} must use the standard HTTPS port`);
   return url;
 }
 
+function limitedText(value: unknown, label: string, maximum: number, required = false): string {
+  if (typeof value !== "string") {
+    if (required) throw new Error(`${label} is required`);
+    return "";
+  }
+  const normalized = value.trim();
+  if (required && !normalized) throw new Error(`${label} is required`);
+  if (normalized.length > maximum) throw new Error(`${label} is too long`);
+  return normalized;
+}
+
+function limitedList(value: unknown, label: string): string[] {
+  if (!Array.isArray(value) || value.length > 50) throw new Error(`${label} is invalid`);
+  return value.map((item) => limitedText(item, label, 200, true));
+}
+
 export async function registerSite(repository: SupabaseRepository, input: RegisterSiteInput) {
-  if (!input.siteId || !input.siteSecret) throw new Error("Site credentials are required");
-  if (input.siteSecret.length < 32) throw new Error("Site secret is too short");
+  if (!/^[0-9a-f-]{36}$/i.test(input.siteId ?? "")) throw new Error("Site identifier is invalid");
+  if (!input.siteSecret || input.siteSecret.length < 32 || input.siteSecret.length > 256) {
+    throw new Error("Site secret is invalid");
+  }
 
   const website = requireHttps(input.websiteUrl, "Website URL");
   const callback = requireHttps(input.callbackUrl, "Callback URL");
-  if (website.hostname !== callback.hostname) {
-    throw new Error("WordPress callback must use the registered website hostname");
+  if (website.origin !== callback.origin) {
+    throw new Error("WordPress callback must use the registered website origin");
   }
-  if (!callback.pathname.startsWith("/wp-json/neo-authority/v1/")) {
+  if (!/(?:^|\/)wp-json\/neo-authority\/v1\/publish\/?$/.test(callback.pathname)) {
     throw new Error("WordPress callback path is not recognized");
   }
+
+  const businessName = limitedText(input.businessName, "Business name", 200, true);
+  const businessDescription = limitedText(input.businessDescription, "Business description", 5_000);
+  const industry = limitedText(input.industry, "Industry", 300);
+  const targetAudience = limitedText(input.targetAudience, "Target audience", 2_000);
+  const tone = limitedText(input.tone, "Tone", 500);
+  const services = limitedList(input.services ?? [], "Services");
+  const locations = limitedList(input.locations ?? [], "Locations");
 
   const existing = await repository.findSiteByExternalId(input.siteId);
   const organizationId = existing?.organization_id
     ? String(existing.organization_id)
-    : String((await repository.createOrganization(input.businessName || "New customer")).id ?? randomUUID());
+    : String((await repository.createOrganization(businessName)).id ?? randomUUID());
 
   return repository.upsertSite({
     organization_id: organizationId,
@@ -51,17 +79,18 @@ export async function registerSite(repository: SupabaseRepository, input: Regist
     website_url: website.toString(),
     callback_url: callback.toString(),
     encrypted_site_secret: encryptSecret(input.siteSecret),
-    business_name: input.businessName,
-    business_description: input.businessDescription ?? "",
-    industry: input.industry ?? "",
-    target_audience: input.targetAudience ?? "",
-    tone: input.tone ?? "Clear, useful, trustworthy and professional",
-    services: input.services ?? [],
-    locations: input.locations ?? [],
+    business_name: businessName,
+    business_description: businessDescription,
+    industry,
+    target_audience: targetAudience,
+    tone: tone || "Clear, useful, trustworthy and professional",
+    services,
+    locations,
     content_mode: input.contentMode ?? "balanced",
     publish_mode: input.publishMode ?? "approval_required",
     cadence: input.cadence ?? "weekly",
     knowledge_review_required: input.knowledgeReviewRequired !== false,
+    workflow_mode: "operator_managed",
     enabled: true,
     updated_at: new Date().toISOString(),
   });
