@@ -199,6 +199,23 @@ export class SupabaseRepository {
     return rows[0];
   }
 
+  async insertOperatorAuditEvent(input: Record<string, unknown>) {
+    const rows = await this.request<Record<string, unknown>[]>("operator_audit_events", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    return rows[0] ?? null;
+  }
+
+  async listOperatorAuditEvents(limit = 500) {
+    const query = new URLSearchParams({
+      select: "id,job_id,event_type,actor_type,outcome,metadata,occurred_at",
+      order: "occurred_at.desc",
+      limit: String(Math.min(Math.max(limit, 1), 1000)),
+    });
+    return this.request<Record<string, unknown>[]>(`operator_audit_events?${query.toString()}`);
+  }
+
   async listRunsSince(siteId: string, since: string, limit = 3) {
     const query = new URLSearchParams({
       select: "id,started_at",
