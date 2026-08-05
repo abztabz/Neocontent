@@ -58,7 +58,7 @@ Do not expose Production secrets to Preview deployments. Use a separate Supabase
 
 ## 4. WordPress
 
-Download the `neo-authority-engine-wordpress-v1.3.0` artifact from the latest successful CI run and upload the ZIP under **Plugins → Add New → Upload Plugin**.
+Download the `neo-authority-engine-wordpress-v1.3.1` artifact from the latest successful CI run and upload the ZIP under **Plugins → Add New → Upload Plugin**.
 
 During activation:
 
