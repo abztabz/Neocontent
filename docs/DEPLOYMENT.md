@@ -58,7 +58,7 @@ Do not expose Production secrets to Preview deployments. Use a separate Supabase
 
 ## 4. WordPress
 
-Download the `neo-authority-engine-wordpress-v1.4.0` artifact from the latest successful CI run and upload the ZIP under **Plugins → Add New → Upload Plugin**. Website owners connect with one button; no license or enrollment key is shown. New sites remain pending until approved in the private operator dashboard.
+Download the `neo-authority-engine-wordpress-v1.4.1` artifact from the latest successful CI run and upload the ZIP under **Plugins → Add New → Upload Plugin**. Website owners connect with one button; no license or enrollment key is shown. New sites remain pending until approved in the private operator dashboard.
 
 During activation:
 
