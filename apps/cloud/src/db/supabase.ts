@@ -216,6 +216,51 @@ export class SupabaseRepository {
     return this.request<Record<string, unknown>[]>(`operator_audit_events?${query.toString()}`);
   }
 
+  async upsertOperatorPushSubscription(input: Record<string, unknown>) {
+    const rows = await this.request<Record<string, unknown>[]>("operator_push_subscriptions?on_conflict=endpoint_hash", {
+      method: "POST",
+      headers: { prefer: "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify(input),
+    });
+    return rows[0] ?? null;
+  }
+
+  async listOperatorPushSubscriptions(limit = 5) {
+    const query = new URLSearchParams({ select: "endpoint_hash,subscription_encrypted,last_seen_at", order: "last_seen_at.desc", limit: String(Math.min(Math.max(limit, 1), 5)) });
+    return this.request<Record<string, unknown>[]>(`operator_push_subscriptions?${query.toString()}`);
+  }
+
+  async touchOperatorPushSubscription(endpointHash: string) {
+    return this.request<Record<string, unknown>[]>(`operator_push_subscriptions?endpoint_hash=eq.${encodeURIComponent(endpointHash)}`, {
+      method: "PATCH", body: JSON.stringify({ last_seen_at: new Date().toISOString() }),
+    });
+  }
+
+  async deleteOperatorPushSubscription(endpointHash: string) {
+    await this.request<null>(`operator_push_subscriptions?endpoint_hash=eq.${encodeURIComponent(endpointHash)}`, { method: "DELETE" });
+  }
+
+  async trimOperatorPushSubscriptions(limit = 5) {
+    const rows = await this.request<Record<string, unknown>[]>(`operator_push_subscriptions?select=endpoint_hash&order=last_seen_at.desc`);
+    for (const row of rows.slice(Math.min(Math.max(limit, 1), 5))) await this.deleteOperatorPushSubscription(String(row.endpoint_hash));
+  }
+
+  async insertOperatorNotificationOutbox(input: Record<string, unknown>) {
+    const rows = await this.request<Record<string, unknown>[]>("operator_notification_outbox?on_conflict=event_key", {
+      method: "POST",
+      headers: { prefer: "resolution=ignore-duplicates,return=representation" },
+      body: JSON.stringify(input),
+    });
+    return rows[0] ?? null;
+  }
+
+  async completeOperatorNotificationOutbox(eventKey: string, sentCount: number) {
+    const rows = await this.request<Record<string, unknown>[]>(`operator_notification_outbox?event_key=eq.${encodeURIComponent(eventKey)}`, {
+      method: "PATCH", body: JSON.stringify({ status: "completed", sent_count: sentCount, completed_at: new Date().toISOString() }),
+    });
+    return rows[0] ?? null;
+  }
+
   async listRunsSince(siteId: string, since: string, limit = 3) {
     const query = new URLSearchParams({
       select: "id,started_at",

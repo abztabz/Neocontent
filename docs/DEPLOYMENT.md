@@ -17,6 +17,8 @@ Apply migrations in order:
 3. `supabase/migrations/003_request_replay_guard.sql`
 4. `supabase/migrations/004_security_hardening.sql`
 5. `supabase/migrations/005_operator_content_queue.sql`
+6. `supabase/migrations/006_operator_command_center.sql`
+7. `supabase/migrations/007_operator_push_notifications.sql`
 
 After applying migrations, run Supabase security and performance advisors. The service-role key must remain server-side and must never be added to WordPress.
 
@@ -34,10 +36,15 @@ NEO_SECRET_ENCRYPTION_KEY=
 CRON_SECRET=
 NEO_REGISTRATION_TOKEN=
 NEO_OPERATOR_TOKEN=
+NEO_VAPID_SUBJECT=mailto:operator@example.com
+NEO_VAPID_PUBLIC_KEY=
+NEO_VAPID_PRIVATE_KEY=
 NEO_MAX_MANUAL_RUNS_PER_HOUR=3
 ```
 
 Generate `NEO_SECRET_ENCRYPTION_KEY` as 32 random bytes encoded in base64. Generate `CRON_SECRET`, `NEO_REGISTRATION_TOKEN`, and `NEO_OPERATOR_TOKEN` as independent high-entropy secrets of at least 32 characters. The registration token is presented to customers as a NeoContent license key, entered once, and never stored by the plugin. The operator token must remain private to the NeoOS operator.
+
+Generate one VAPID key pair with `npx web-push generate-vapid-keys --json`. Store the public and private values in their matching Vercel variables and set `NEO_VAPID_SUBJECT` to an operator-controlled `mailto:` address. Never put the private VAPID key in WordPress, Git, screenshots, or chat.
 
 Do not expose Production secrets to Preview deployments. Use a separate Supabase project and separate OpenAI, encryption, cron, and registration credentials for Preview, or disable Preview environment access until that isolation exists.
 
@@ -82,5 +89,7 @@ Allow or trigger the first operator sync and verify:
 - revisions replace only the existing unpublished draft;
 - operator-managed sites never enter the paid-model cron path;
 - job and review states are stored in Supabase.
+- the installed Home Screen operator app can subscribe, receive a generic test alert, deep-link to `/api/operator?view=action`, disable alerts, and remove an expired subscription;
+- Lock Screen notification payloads reveal no customer, article, status count, feedback, brief, or job identifier.
 
 Only after this gate passes should the PR be marked ready and the Vercel deployment promoted to Production.
