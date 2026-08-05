@@ -1,6 +1,7 @@
 import { createRepository } from "../../runtime.js";
 import { authenticateSiteRequest, type SignedRequestLike } from "../authenticate.js";
 import { createLunaBrief } from "../../operator/briefing-layer.js";
+import { notifyOperatorSafely } from "../../operator/push-notifications.js";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -51,6 +52,9 @@ export async function handleCustomerContentJobs(
       outcome: "success",
       metadata: {},
     });
+    if (payload.decision === "changes_requested") {
+      await notifyOperatorSafely(repository, "changes_requested", `changes-requested:${payload.jobId}:${String(job.reviewed_at ?? "")}`);
+    }
     return { status: 200, body: { job: { id: job.id, status: job.status, reviewed_at: job.reviewed_at } } };
   }
   if (payload.action !== "create") throw new Error("Content job action is not recognized");
@@ -92,6 +96,7 @@ export async function handleCustomerContentJobs(
     outcome: "success",
     metadata: {},
   });
+  if (job) await notifyOperatorSafely(repository, "brief_ready", `brief-ready:${String(job.id)}`);
   return {
     status: 201,
     body: {
