@@ -94,13 +94,19 @@ final class Neo_Cloud_Client {
         $settings = $this->settings();
         $initial = ($settings['registered'] ?? '0') !== '1';
         $extra_headers = $initial ? ['X-Neo-Connection-Request' => '1'] : [];
-        return $this->request('POST', '/api/v1/sites/register', [
+        $payload = array_merge([
             'siteId' => $settings['site_id'],
             'siteSecret' => $settings['site_secret'],
             'websiteUrl' => home_url('/'),
             'callbackUrl' => rest_url('neo-authority/v1/publish'),
-            ...$profile,
-        ], $extra_headers, $initial ? 'registration' : 'plugin-to-cloud');
+        ], $profile);
+        return $this->request(
+            'POST',
+            '/api/v1/sites/register',
+            $payload,
+            $extra_headers,
+            $initial ? 'registration' : 'plugin-to-cloud'
+        );
     }
 
     public function sync_knowledge_candidates(array $candidates) {

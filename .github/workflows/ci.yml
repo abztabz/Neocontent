@@ -22,10 +22,16 @@ jobs:
       - run: npm test
       - name: Lint WordPress PHP
         run: find plugins/wordpress -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Enforce PHP 8.0 runtime compatibility
+        run: |
+          if grep -R -n -E '\.\.\.\$' plugins/wordpress --include='*.php'; then
+            echo 'Array unpacking is prohibited in the PHP 8.0 WordPress build.' >&2
+            exit 1
+          fi
       - name: Package WordPress plugin
         run: bash scripts/package-wordpress.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: neo-authority-engine-wordpress-v1.4.0
-          path: dist/neo-authority-engine-v1.4.0.zip
+          name: neo-authority-engine-wordpress-v1.4.1
+          path: dist/neo-authority-engine-v1.4.1.zip
           if-no-files-found: error
