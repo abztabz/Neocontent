@@ -3,7 +3,10 @@
 if (!defined('ABSPATH')) exit;
 
 final class Neo_Customer_Dashboard {
-    public function __construct(private readonly Neo_Cloud_Client $client) {
+    private Neo_Cloud_Client $client;
+
+    public function __construct(Neo_Cloud_Client $client) {
+        $this->client = $client;
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_post_nae_review_draft', [$this, 'review_draft']);
         add_action('add_meta_boxes_post', [$this, 'add_evidence_box']);

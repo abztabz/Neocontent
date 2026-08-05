@@ -3,7 +3,10 @@
 if (!defined('ABSPATH')) exit;
 
 final class Neo_Operator_Sync {
-    public function __construct(private readonly Neo_Cloud_Client $client) {
+    private Neo_Cloud_Client $client;
+
+    public function __construct(Neo_Cloud_Client $client) {
+        $this->client = $client;
         add_action('nae_operator_sync', [$this, 'run']);
     }
 

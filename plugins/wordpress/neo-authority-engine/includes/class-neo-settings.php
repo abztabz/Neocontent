@@ -3,7 +3,10 @@
 if (!defined('ABSPATH')) exit;
 
 final class Neo_Settings {
-    public function __construct(private readonly Neo_Cloud_Client $client) {
+    private Neo_Cloud_Client $client;
+
+    public function __construct(Neo_Cloud_Client $client) {
+        $this->client = $client;
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_init', [$this, 'register']);
         add_action('admin_post_nae_register_site', [$this, 'register_site']);
