@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import pushHandler from "../../api/operator/push.js";
+import pushHandler from "../../api/operator/index.js";
 import { operatorSessionDigest } from "./auth.js";
 
 function response() {
@@ -15,7 +15,7 @@ function response() {
 test("push management rejects unauthenticated requests", async () => {
   process.env.NEO_OPERATOR_TOKEN = "T".repeat(32);
   const output = response();
-  await pushHandler({ method: "POST", headers: {}, query: {}, body: {} }, output);
+  await pushHandler({ method: "POST", headers: {}, query: {}, body: { action: "push_test" } }, output);
   assert.equal(output.statusCode, 401);
 });
 
@@ -24,10 +24,12 @@ test("push management rejects invalid CSRF and cross-origin requests", async () 
   process.env.NEO_OPERATOR_TOKEN = token;
   const cookie = `neo_operator_session=${operatorSessionDigest(token)}; neo_operator_csrf=csrf-value`;
   const badCsrf = response();
-  await pushHandler({ method: "POST", headers: { cookie, origin: "https://neo.test", host: "neo.test" }, query: {}, body: { action: "test", csrf: "wrong" } }, badCsrf);
+  process.env.SUPABASE_URL = "https://supabase.test";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
+  await pushHandler({ method: "POST", headers: { cookie, origin: "https://neo.test", host: "neo.test" }, query: {}, body: { action: "push_test", csrf: "wrong" } }, badCsrf);
   assert.equal(badCsrf.statusCode, 400);
   const badOrigin = response();
-  await pushHandler({ method: "POST", headers: { cookie, origin: "https://evil.test", host: "neo.test" }, query: {}, body: { action: "test", csrf: "csrf-value" } }, badOrigin);
+  await pushHandler({ method: "POST", headers: { cookie, origin: "https://evil.test", host: "neo.test" }, query: {}, body: { action: "push_test", csrf: "csrf-value" } }, badOrigin);
   assert.equal(badOrigin.statusCode, 400);
 });
 
@@ -38,7 +40,7 @@ test("push management rejects a non-allowlisted subscription endpoint", async ()
   process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
   const cookie = `neo_operator_session=${operatorSessionDigest(token)}; neo_operator_csrf=csrf-value`;
   const output = response();
-  await pushHandler({ method: "POST", headers: { cookie, origin: "https://neo.test", host: "neo.test" }, query: {}, body: { action: "subscribe", csrf: "csrf-value", subscription: { ...validSubscription, endpoint: "https://example.com/push" } } }, output);
+  await pushHandler({ method: "POST", headers: { cookie, origin: "https://neo.test", host: "neo.test" }, query: {}, body: { action: "push_subscribe", csrf: "csrf-value", subscription: { ...validSubscription, endpoint: "https://example.com/push" } } }, output);
   assert.equal(output.statusCode, 400);
 });
 

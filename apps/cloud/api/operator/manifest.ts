@@ -14,6 +14,5 @@ export default function handler(request: VercelRequestLike, response: VercelResp
     display: "standalone",
     background_color: "#f4f6f8",
     theme_color: "#17202a",
-    icons: [{ src: "/api/operator/icon", sizes: "any", type: "image/svg+xml", purpose: "any maskable" }],
   });
 }
