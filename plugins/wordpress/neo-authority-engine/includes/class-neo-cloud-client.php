@@ -90,10 +90,10 @@ final class Neo_Cloud_Client {
         return is_array($decoded) ? $decoded : [];
     }
 
-    public function register_site(array $profile, string $enrollment_token = '') {
+    public function register_site(array $profile) {
         $settings = $this->settings();
         $initial = ($settings['registered'] ?? '0') !== '1';
-        $extra_headers = $initial && $enrollment_token !== '' ? ['X-Neo-Enrollment-Token' => $enrollment_token] : [];
+        $extra_headers = $initial ? ['X-Neo-Connection-Request' => '1'] : [];
         return $this->request('POST', '/api/v1/sites/register', [
             'siteId' => $settings['site_id'],
             'siteSecret' => $settings['site_secret'],

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Neo Authority Engine
  * Description: Governed business knowledge, trusted sources, and evidence-backed blog automation.
- * Version: 1.3.1
+ * Version: 1.4.0
  * Author: 108 Media
  * Requires at least: 6.2
  * Requires PHP: 8.0
@@ -10,7 +10,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('NAE_VERSION', '1.3.1');
+define('NAE_VERSION', '1.4.0');
 define('NAE_OPTION', 'nae_v1_settings');
 
 require_once __DIR__ . '/includes/class-neo-secret-store.php';
@@ -49,12 +49,13 @@ final class Neo_Authority_Engine_V1 {
                 'content_mode' => 'balanced', 'cadence' => 'weekly',
                 'generation_mode' => 'operator_managed',
                 'knowledge_review_required' => '1', 'registered' => '0',
+                'connection_status' => 'not_connected', 'connection_requested_at' => 0,
             ], '', false);
         }
         if (!wp_next_scheduled('nae_operator_sync')) wp_schedule_event(time() + 300, 'hourly', 'nae_operator_sync');
     }
 
-    public static function deactivate(): void { wp_clear_scheduled_hook('nae_operator_sync'); }
+    public static function deactivate(): void { wp_clear_scheduled_hook('nae_operator_sync'); wp_clear_scheduled_hook('nae_connection_check'); }
 
     public static function ensure_schedule(): void {
         if (!wp_next_scheduled('nae_operator_sync')) wp_schedule_event(time() + 300, 'hourly', 'nae_operator_sync');

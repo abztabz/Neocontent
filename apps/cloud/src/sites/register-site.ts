@@ -45,7 +45,7 @@ function limitedList(value: unknown, label: string): string[] {
   return value.map((item) => limitedText(item, label, 200, true));
 }
 
-export async function registerSite(repository: SupabaseRepository, input: RegisterSiteInput) {
+export function validateRegisterSiteInput(input: RegisterSiteInput): RegisterSiteInput {
   if (!/^[0-9a-f-]{36}$/i.test(input.siteId ?? "")) throw new Error("Site identifier is invalid");
   if (!input.siteSecret || input.siteSecret.length < 32 || input.siteSecret.length > 256) {
     throw new Error("Site secret is invalid");
@@ -68,28 +68,49 @@ export async function registerSite(repository: SupabaseRepository, input: Regist
   const services = limitedList(input.services ?? [], "Services");
   const locations = limitedList(input.locations ?? [], "Locations");
 
-  const existing = await repository.findSiteByExternalId(input.siteId);
-  const organizationId = existing?.organization_id
-    ? String(existing.organization_id)
-    : String((await repository.createOrganization(businessName)).id ?? randomUUID());
-
-  return repository.upsertSite({
-    organization_id: organizationId,
-    external_site_id: input.siteId,
-    website_url: website.toString(),
-    callback_url: callback.toString(),
-    encrypted_site_secret: encryptSecret(input.siteSecret),
-    business_name: businessName,
-    business_description: businessDescription,
+  return {
+    siteId: input.siteId,
+    siteSecret: input.siteSecret,
+    websiteUrl: website.toString(),
+    callbackUrl: callback.toString(),
+    businessName,
+    businessDescription,
     industry,
-    target_audience: targetAudience,
+    targetAudience,
     tone: tone || "Clear, useful, trustworthy and professional",
     services,
     locations,
-    content_mode: input.contentMode ?? "balanced",
-    publish_mode: input.publishMode ?? "approval_required",
+    contentMode: input.contentMode ?? "balanced",
+    publishMode: input.publishMode ?? "approval_required",
     cadence: input.cadence ?? "weekly",
-    knowledge_review_required: input.knowledgeReviewRequired !== false,
+    knowledgeReviewRequired: input.knowledgeReviewRequired !== false,
+  };
+}
+
+export async function registerSite(repository: SupabaseRepository, input: RegisterSiteInput) {
+  const validated = validateRegisterSiteInput(input);
+  const existing = await repository.findSiteByExternalId(validated.siteId);
+  const organizationId = existing?.organization_id
+    ? String(existing.organization_id)
+    : String((await repository.createOrganization(validated.businessName)).id ?? randomUUID());
+
+  return repository.upsertSite({
+    organization_id: organizationId,
+    external_site_id: validated.siteId,
+    website_url: validated.websiteUrl,
+    callback_url: validated.callbackUrl,
+    encrypted_site_secret: encryptSecret(validated.siteSecret),
+    business_name: validated.businessName,
+    business_description: validated.businessDescription,
+    industry: validated.industry,
+    target_audience: validated.targetAudience,
+    tone: validated.tone,
+    services: validated.services,
+    locations: validated.locations,
+    content_mode: validated.contentMode,
+    publish_mode: validated.publishMode,
+    cadence: validated.cadence,
+    knowledge_review_required: validated.knowledgeReviewRequired,
     workflow_mode: "operator_managed",
     enabled: true,
     updated_at: new Date().toISOString(),

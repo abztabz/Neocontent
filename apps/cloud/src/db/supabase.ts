@@ -69,6 +69,51 @@ export class SupabaseRepository {
     return rows[0];
   }
 
+  async findPendingSiteConnection(externalSiteId: string) {
+    const query = new URLSearchParams({ select: "*", external_site_id: `eq.${externalSiteId}`, limit: "1" });
+    const rows = await this.request<Record<string, unknown>[]>(`pending_site_connections?${query.toString()}`);
+    return rows[0] ?? null;
+  }
+
+  async findPendingSiteConnectionById(id: string) {
+    const query = new URLSearchParams({ select: "*", id: `eq.${id}`, limit: "1" });
+    const rows = await this.request<Record<string, unknown>[]>(`pending_site_connections?${query.toString()}`);
+    return rows[0] ?? null;
+  }
+
+  async upsertPendingSiteConnection(input: Record<string, unknown>) {
+    const rows = await this.request<Record<string, unknown>[]>("pending_site_connections?on_conflict=external_site_id", {
+      method: "POST",
+      headers: { prefer: "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify({ ...input, updated_at: new Date().toISOString() }),
+    });
+    return rows[0] ?? null;
+  }
+
+  async listPendingSiteConnections(limit = 100) {
+    const query = new URLSearchParams({
+      select: "id,external_site_id,website_url,business_name,status,requested_at,updated_at",
+      status: "eq.pending",
+      order: "requested_at.asc",
+      limit: String(Math.min(Math.max(limit, 1), 100)),
+    });
+    return this.request<Record<string, unknown>[]>(`pending_site_connections?${query.toString()}`);
+  }
+
+  async updatePendingSiteConnection(id: string, patch: Record<string, unknown>) {
+    const rows = await this.request<Record<string, unknown>[]>(`pending_site_connections?id=eq.${encodeURIComponent(id)}&status=eq.pending`, {
+      method: "PATCH",
+      body: JSON.stringify({ ...patch, updated_at: new Date().toISOString() }),
+    });
+    if (!rows[0]) throw new Error("Pending site connection was not found");
+    return rows[0];
+  }
+
+  async countPendingSiteConnections() {
+    const rows = await this.request<Record<string, unknown>[]>("pending_site_connections?select=id&status=eq.pending&limit=101");
+    return rows.length;
+  }
+
   async updateSite(id: string, patch: Record<string, unknown>) {
     const rows = await this.request<Record<string, unknown>[]>(`sites?id=eq.${encodeURIComponent(id)}`, {
       method: "PATCH", body: JSON.stringify({ ...patch, updated_at: new Date().toISOString() }),
