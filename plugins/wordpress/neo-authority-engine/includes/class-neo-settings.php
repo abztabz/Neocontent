@@ -10,6 +10,7 @@ final class Neo_Settings {
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_init', [$this, 'register']);
         add_action('admin_post_nae_register_site', [$this, 'register_site']);
+        add_action('nae_connection_check', [$this, 'check_connection']);
     }
 
     public function menu(): void {
@@ -47,6 +48,8 @@ final class Neo_Settings {
             'generation_mode' => 'operator_managed',
             'knowledge_review_required' => '0',
             'registered' => sanitize_text_field($current['registered'] ?? '0'),
+            'connection_status' => sanitize_key($current['connection_status'] ?? 'not_connected'),
+            'connection_requested_at' => absint($current['connection_requested_at'] ?? 0),
         ];
     }
 
@@ -91,6 +94,7 @@ final class Neo_Settings {
             'manual_source_urls' => '',
             'content_mode' => 'balanced', 'cadence' => 'weekly', 'knowledge_review_required' => '1', 'registered' => '0',
             'generation_mode' => 'operator_managed',
+            'connection_status' => 'not_connected', 'connection_requested_at' => 0,
         ]);
         ?>
         <div class="wrap"><h1>Activate NeoContent</h1>
@@ -108,17 +112,26 @@ final class Neo_Settings {
                     <tr><th>Cadence</th><td><select name="<?php echo NAE_OPTION; ?>[cadence]"><option value="daily" <?php selected($s['cadence'], 'daily'); ?>>Daily</option><option value="weekly" <?php selected($s['cadence'], 'weekly'); ?>>Weekly</option><option value="biweekly" <?php selected($s['cadence'], 'biweekly'); ?>>Every two weeks</option><option value="monthly" <?php selected($s['cadence'], 'monthly'); ?>>Monthly</option></select></td></tr>
                 </table><?php submit_button('Save settings'); ?>
             </form>
-            <hr><p>Service status: <strong><?php echo $s['registered'] === '1' ? 'Active' : 'Activation required'; ?></strong></p>
-            <?php if ($s['registered'] !== '1'): ?><form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><?php wp_nonce_field('nae_register_site'); ?><input type="hidden" name="action" value="nae_register_site"><label>NeoContent license key <input type="password" name="nae_enrollment_token" minlength="32" maxlength="256" required autocomplete="off"></label> <?php submit_button('Activate NeoContent', 'primary', 'submit', false); ?></form><?php endif; ?>
+            <?php
+            $status = $s['registered'] === '1' ? 'Active' : (($s['connection_status'] ?? '') === 'pending' ? 'Connecting' : (($s['connection_status'] ?? '') === 'support_required' ? 'Needs assistance' : 'Not connected'));
+            ?>
+            <hr><p>Service status: <strong><?php echo esc_html($status); ?></strong></p>
+            <?php if ($s['registered'] !== '1' && ($s['connection_status'] ?? '') !== 'pending'): ?><form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><?php wp_nonce_field('nae_register_site'); ?><input type="hidden" name="action" value="nae_register_site"><?php submit_button('Connect NeoContent', 'primary', 'submit', false); ?></form><?php endif; ?>
         </div><?php
     }
 
     public function register_site(): void {
-        $this->authorize('nae_register_site'); $s = get_option(NAE_OPTION, []);
-        $enrollment_token = trim((string)wp_unslash($_POST['nae_enrollment_token'] ?? ''));
-        if (($s['registered'] ?? '0') !== '1' && (strlen($enrollment_token) < 32 || strlen($enrollment_token) > 256)) {
-            $this->redirect('A valid enrollment token is required for first registration.');
-        }
+        $this->authorize('nae_register_site');
+        $message = $this->attempt_connection();
+        $this->redirect($message);
+    }
+
+    public function check_connection(): void {
+        $this->attempt_connection();
+    }
+
+    private function attempt_connection(): string {
+        $s = get_option(NAE_OPTION, []);
         $result = $this->client->register_site([
             'businessName' => $s['business_name'] ?? get_bloginfo('name'), 'businessDescription' => $s['business_description'] ?? '',
             'industry' => $s['industry'] ?? '', 'targetAudience' => $s['target_audience'] ?? '', 'tone' => $s['tone'] ?? '',
@@ -126,13 +139,31 @@ final class Neo_Settings {
             'locations' => array_values(array_filter(array_map('trim', explode(',', $s['locations'] ?? '')))),
             'contentMode' => $s['content_mode'] ?? 'balanced', 'publishMode' => $s['publish_mode'] ?? 'approval_required',
             'cadence' => $s['cadence'] ?? 'weekly', 'knowledgeReviewRequired' => ($s['knowledge_review_required'] ?? '1') === '1',
-        ], $enrollment_token);
-        if (!is_wp_error($result)) {
-            $s['registered'] = '1';
+        ]);
+        if (is_wp_error($result)) {
+            $s['connection_status'] = 'support_required';
             update_option(NAE_OPTION, $s, false);
-            wp_schedule_single_event(time() + 10, 'nae_operator_sync');
+            return 'NeoContent could not connect. Please contact support.';
         }
-        $this->redirect(is_wp_error($result) ? $result->get_error_message() : 'Site registered and synchronized.');
+        $status = sanitize_key((string)($result['status'] ?? ''));
+        if ($status === 'registered') {
+            $s['registered'] = '1';
+            $s['connection_status'] = 'active';
+            update_option(NAE_OPTION, $s, false);
+            wp_clear_scheduled_hook('nae_connection_check');
+            wp_schedule_single_event(time() + 10, 'nae_operator_sync');
+            return 'NeoContent is connected.';
+        }
+        if ($status === 'pending') {
+            $s['connection_status'] = 'pending';
+            if (empty($s['connection_requested_at'])) $s['connection_requested_at'] = time();
+            update_option(NAE_OPTION, $s, false);
+            if (!wp_next_scheduled('nae_connection_check')) wp_schedule_single_event(time() + 300, 'nae_connection_check');
+            return 'NeoContent is connecting. Setup will complete automatically.';
+        }
+        $s['connection_status'] = 'support_required';
+        update_option(NAE_OPTION, $s, false);
+        return 'NeoContent needs assistance. Please contact support.';
     }
 
     private function authorize(string $nonce): void { if (!current_user_can('manage_options')) wp_die('Not allowed'); check_admin_referer($nonce); }

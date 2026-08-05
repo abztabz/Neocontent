@@ -10,7 +10,7 @@ const allowedPushHosts = [
   "updates.push.services.mozilla.com",
 ];
 
-export type OperatorNotificationKind = "brief_ready" | "changes_requested" | "delivery_failed" | "test";
+export type OperatorNotificationKind = "brief_ready" | "changes_requested" | "delivery_failed" | "connection_requested" | "test";
 
 export interface BrowserPushSubscription {
   endpoint: string;
