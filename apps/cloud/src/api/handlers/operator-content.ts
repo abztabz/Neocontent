@@ -1,5 +1,6 @@
 import { createRepository } from "../../runtime.js";
 import { authenticateSiteRequest, type SignedRequestLike } from "../authenticate.js";
+import { createLunaBrief } from "../../operator/briefing-layer.js";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -63,7 +64,14 @@ export async function handleCustomerContentJobs(
   if (!payload.brief || Array.isArray(payload.brief) || typeof payload.brief !== "object") {
     throw new Error("A structured content brief is required");
   }
-  const serialized = JSON.stringify(payload.brief);
+  const approvedSources = await repository.listApprovedSources(String(site.id));
+  const enrichedBrief = createLunaBrief({
+    topic,
+    customerSummary,
+    rawBrief: payload.brief,
+    approvedSources,
+  });
+  const serialized = JSON.stringify(enrichedBrief);
   if (serialized.length > 500_000) throw new Error("Content brief is too large");
 
   const job = await repository.insertOperatorContentJob({
@@ -72,7 +80,7 @@ export async function handleCustomerContentJobs(
     topic,
     customer_summary: customerSummary,
     status: "brief_ready",
-    brief_payload: payload.brief,
+    brief_payload: enrichedBrief,
     idempotency_key: payload.idempotencyKey,
   });
   if (job) await repository.insertOperatorAuditEvent({
