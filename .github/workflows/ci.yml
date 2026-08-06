@@ -28,10 +28,16 @@ jobs:
             echo 'Array unpacking is prohibited in the PHP 8.0 WordPress build.' >&2
             exit 1
           fi
+      - name: Block legacy WordPress background onboarding
+        run: |
+          if grep -R -n -E "wp_schedule_(event|single_event)|admin_post_nae_register_site|add_action\('nae_operator_sync" plugins/wordpress/neo-authority-engine --include='*.php'; then
+            echo 'WordPress background onboarding or operator sync is prohibited.' >&2
+            exit 1
+          fi
       - name: Package WordPress plugin
         run: bash scripts/package-wordpress.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: neo-authority-engine-wordpress-v1.4.3
-          path: dist/neo-authority-engine-v1.4.3.zip
+          name: neo-authority-engine-wordpress-v1.5.0
+          path: dist/neo-authority-engine-v1.5.0.zip
           if-no-files-found: error

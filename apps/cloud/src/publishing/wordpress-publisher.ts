@@ -24,7 +24,15 @@ function isUnsafeAddress(address: string): boolean {
   return true;
 }
 
-async function postJsonPinned(url: URL, body: string, headers: Record<string, string>): Promise<{ status: number; body: string }> {
+export async function requestWordPressPinned(input: {
+  url: URL;
+  method: "GET" | "POST";
+  body?: string;
+  headers?: Record<string, string>;
+  timeoutMs?: number;
+  maximumBytes?: number;
+}): Promise<{ status: number; body: string; contentType: string }> {
+  const { url } = input;
   const records = await lookup(url.hostname, { all: true, verbatim: true });
   if (!records.length || records.some((record) => isUnsafeAddress(record.address))) {
     throw new Error("WordPress callback resolves to an unsafe network address");
@@ -38,8 +46,12 @@ async function postJsonPinned(url: URL, body: string, headers: Record<string, st
       hostname: url.hostname,
       port: url.port || undefined,
       path: `${url.pathname}${url.search}`,
-      method: "POST",
-      headers: { ...headers, "content-length": String(Buffer.byteLength(body)), "accept-encoding": "identity" },
+      method: input.method,
+      headers: {
+        ...(input.headers ?? {}),
+        ...(input.method === "POST" ? { "content-length": String(Buffer.byteLength(input.body ?? "")) } : {}),
+        "accept-encoding": "identity",
+      },
       lookup: (_hostname, _options, callback) => callback(null, destination.address, destination.family),
     };
     const request = (url.protocol === "https:" ? httpsRequest : httpRequest)(
@@ -49,19 +61,23 @@ async function postJsonPinned(url: URL, body: string, headers: Record<string, st
         let total = 0;
         response.on("data", (chunk: Buffer) => {
           total += chunk.length;
-          if (total > 256_000) {
+          if (total > (input.maximumBytes ?? 256_000)) {
             response.destroy(new Error("WordPress response is too large"));
             return;
           }
           chunks.push(chunk);
         });
         response.on("error", reject);
-        response.on("end", () => resolve({ status: response.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8") }));
+        response.on("end", () => resolve({
+          status: response.statusCode ?? 0,
+          body: Buffer.concat(chunks).toString("utf8"),
+          contentType: String(response.headers["content-type"] ?? ""),
+        }));
       },
     );
-    request.setTimeout(20_000, () => request.destroy(new Error("WordPress callback timed out")));
+    request.setTimeout(input.timeoutMs ?? 20_000, () => request.destroy(new Error("WordPress callback timed out")));
     request.on("error", reject);
-    request.end(body);
+    request.end(input.body ?? "");
   });
 }
 
@@ -107,11 +123,16 @@ export async function publishToWordPress(input: {
     body,
   });
 
-  const response = await postJsonPinned(url, body, {
+  const response = await requestWordPressPinned({
+    url,
+    method: "POST",
+    body,
+    headers: {
       "content-type": "application/json",
       "x-neo-site-id": String(input.site.external_site_id ?? ""),
       "x-neo-timestamp": timestamp,
       "x-neo-signature": signature,
+    },
   });
   if (response.status < 200 || response.status >= 300) throw new Error(`WordPress returned HTTP ${response.status}`);
   return response.body ? JSON.parse(response.body) as Record<string, unknown> : {};

@@ -39,6 +39,7 @@ export function sendError(response: VercelResponseLike, error: unknown): void {
   const rules: Array<{ pattern: RegExp; status: number; code: string }> = [
     { pattern: /rate limit/i, status: 429, code: "RATE_LIMITED" },
     { pattern: /replay|duplicate key|23505/i, status: 409, code: "CONFLICT" },
+    { pattern: /already has a pending connection/i, status: 409, code: "CONFLICT" },
     { pattern: /not found|was not found/i, status: 404, code: "NOT_FOUND" },
     { pattern: /signature|signed request|not registered|enrollment token/i, status: 401, code: "UNAUTHORIZED" },
     { pattern: /invalid|required|too (?:short|long)|must use|must not|at most|only accepts|not recognized/i, status: 400, code: "INVALID_REQUEST" },

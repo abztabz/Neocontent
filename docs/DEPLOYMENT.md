@@ -42,7 +42,7 @@ NEO_VAPID_PRIVATE_KEY=
 NEO_MAX_MANUAL_RUNS_PER_HOUR=3
 ```
 
-Generate `NEO_SECRET_ENCRYPTION_KEY` as 32 random bytes encoded in base64. Generate `CRON_SECRET`, `NEO_REGISTRATION_TOKEN`, and `NEO_OPERATOR_TOKEN` as independent high-entropy secrets of at least 32 characters. The registration token is presented to customers as a NeoContent license key, entered once, and never stored by the plugin. The operator token must remain private to the NeoOS operator.
+Generate `NEO_SECRET_ENCRYPTION_KEY` as 32 random bytes encoded in base64. Generate `CRON_SECRET`, `NEO_REGISTRATION_TOKEN`, and `NEO_OPERATOR_TOKEN` as independent high-entropy secrets of at least 32 characters. `NEO_REGISTRATION_TOKEN` is reserved for controlled server-to-server enrollment and is never shown to a website owner. The operator token must remain private to the NeoOS operator.
 
 Generate one VAPID key pair with `npx web-push generate-vapid-keys --json`. Store the public and private values in their matching Vercel variables and set `NEO_VAPID_SUBJECT` to an operator-controlled `mailto:` address. Never put the private VAPID key in WordPress, Git, screenshots, or chat.
 
@@ -58,22 +58,21 @@ Do not expose Production secrets to Preview deployments. Use a separate Supabase
 
 ## 4. WordPress
 
-Download the `neo-authority-engine-wordpress-v1.4.3` artifact from the latest successful CI run and upload the ZIP under **Plugins → Add New → Upload Plugin**. Website owners connect with one button; no license or enrollment key is shown. Connection runs in a bounded background task so slow or blocked outbound HTTP cannot take down the WordPress admin request. New sites remain pending until approved in the private operator dashboard.
+Download the `neo-authority-engine-wordpress-v1.5.0` artifact from the latest successful CI run and upload the ZIP under **Plugins → Add New → Upload Plugin**. Website owners connect with one button; no license or enrollment key is shown. The browser sends the signed connection package directly to NeoContent after the WordPress page has rendered. WordPress performs no activation-time outbound request and runs no NeoContent polling cron. New sites remain pending until approved in the private operator dashboard, after which the cloud sends a purpose-separated signed activation callback to WordPress.
 
 During activation:
 
 1. Complete the business profile.
 2. Choose the content focus and cadence.
-3. Enter the NeoContent license key.
-4. Activate the service.
-
-For first registration, enter the one-time enrollment token from `NEO_REGISTRATION_TOKEN`. Existing registered sites authenticate future profile synchronization with their site-specific secret and no longer need the enrollment token.
+3. Select **Connect NeoContent**.
+4. Leave the page open briefly while the browser sends the signed request.
+5. Approve the request in the private operator dashboard.
 
 After activation, the customer sees only **Researching** and **Drafts**. Private briefs and completed JSON are accessible only at `/api/operator` after operator authentication.
 
 ## 5. End-to-end acceptance gate
 
-Allow or trigger the first operator sync and verify:
+Approve the browser-mediated connection and verify:
 
 - exactly one WordPress draft is created;
 - the title does not duplicate an existing article;
@@ -88,6 +87,8 @@ Allow or trigger the first operator sync and verify:
 - the customer can edit, approve/publish, reject, or request changes;
 - revisions replace only the existing unpublished draft;
 - operator-managed sites never enter the paid-model cron path;
+- WordPress contains no scheduled NeoContent polling or operator-sync event;
+- a blocked cloud request cannot replace the WordPress admin page with a 503 response;
 - job and review states are stored in Supabase.
 - the installed Home Screen operator app can subscribe, receive a generic test alert, deep-link to `/api/operator?view=action`, disable alerts, and remove an expired subscription;
 - Lock Screen notification payloads reveal no customer, article, status count, feedback, brief, or job identifier.

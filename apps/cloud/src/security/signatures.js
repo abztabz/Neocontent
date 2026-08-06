@@ -30,6 +30,7 @@ export function deriveSigningKey(secret, purpose = 'plugin-to-cloud') {
   const labels = {
     'plugin-to-cloud': 'neo-plugin-to-cloud-v1',
     'cloud-to-wordpress': 'neo-cloud-to-wordpress-v1',
+    'cloud-activation': 'neo-cloud-activation-v1',
     registration: 'neo-registration-v1',
   };
   const label = labels[purpose];
