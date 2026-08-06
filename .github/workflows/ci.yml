@@ -32,6 +32,6 @@ jobs:
         run: bash scripts/package-wordpress.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: neo-authority-engine-wordpress-v1.4.1
-          path: dist/neo-authority-engine-v1.4.1.zip
+          name: neo-authority-engine-wordpress-v1.4.2
+          path: dist/neo-authority-engine-v1.4.2.zip
           if-no-files-found: error

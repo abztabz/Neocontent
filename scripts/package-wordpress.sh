@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE="$ROOT/plugins/wordpress/neo-authority-engine"
-OUTPUT="$ROOT/dist/neo-authority-engine-v1.4.1.zip"
+OUTPUT="$ROOT/dist/neo-authority-engine-v1.4.2.zip"
 
 rm -rf "$ROOT/dist"
 mkdir -p "$ROOT/dist"

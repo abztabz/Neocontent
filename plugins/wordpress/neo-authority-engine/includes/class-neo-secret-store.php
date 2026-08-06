@@ -37,15 +37,19 @@ final class Neo_Secret_Store {
     public static function get(): string {
         $settings = get_option(NAE_OPTION, []);
         $stored = (string)($settings['site_secret_encrypted'] ?? '');
-        if ($stored !== '') return self::decrypt($stored);
+        if ($stored !== '') {
+            $decrypted = self::decrypt($stored);
+            if (strlen($decrypted) >= 32) return $decrypted;
+            if (($settings['registered'] ?? '0') === '1') return '';
+        }
 
         $legacy = (string)($settings['site_secret'] ?? '');
-        if ($legacy === '') return '';
-        $encrypted = self::encrypt($legacy);
+        $secret = strlen($legacy) >= 32 ? $legacy : wp_generate_password(64, false, false);
+        $encrypted = self::encrypt($secret);
         if ($encrypted === '') return '';
         unset($settings['site_secret']);
         $settings['site_secret_encrypted'] = $encrypted;
         update_option(NAE_OPTION, $settings, false);
-        return $legacy;
+        return $secret;
     }
 }
