@@ -28,10 +28,16 @@ jobs:
             echo 'Array unpacking is prohibited in the PHP 8.0 WordPress build.' >&2
             exit 1
           fi
+      - name: Keep customer connection off generic admin-post handler
+        run: |
+          if grep -n "admin-post.php" plugins/wordpress/neo-authority-engine/includes/class-neo-settings.php; then
+            echo 'NeoContent activation must stay on its authenticated plugin page.' >&2
+            exit 1
+          fi
       - name: Package WordPress plugin
         run: bash scripts/package-wordpress.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: neo-authority-engine-wordpress-v1.4.3
-          path: dist/neo-authority-engine-v1.4.3.zip
+          name: neo-authority-engine-wordpress-v1.4.4
+          path: dist/neo-authority-engine-v1.4.4.zip
           if-no-files-found: error
