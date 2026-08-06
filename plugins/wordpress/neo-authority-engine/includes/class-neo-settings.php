@@ -9,7 +9,7 @@ final class Neo_Settings {
         $this->client = $client;
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_init', [$this, 'register']);
-        add_action('admin_post_nae_register_site', [$this, 'register_site']);
+        add_action('admin_init', [$this, 'register_site']);
         add_action('nae_connection_check', [$this, 'check_connection']);
     }
 
@@ -117,11 +117,12 @@ final class Neo_Settings {
             $status = $s['registered'] === '1' ? 'Active' : ($connecting ? 'Connecting' : (($s['connection_status'] ?? '') === 'support_required' ? 'Needs assistance' : 'Not connected'));
             ?>
             <hr><p>Service status: <strong><?php echo esc_html($status); ?></strong></p>
-            <?php if ($s['registered'] !== '1' && !$connecting): ?><form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><?php wp_nonce_field('nae_register_site'); ?><input type="hidden" name="action" value="nae_register_site"><?php submit_button('Connect NeoContent', 'primary', 'submit', false); ?></form><?php endif; ?>
+            <?php if ($s['registered'] !== '1' && !$connecting): ?><form method="post" action="<?php echo esc_url(admin_url('admin.php?page=neo-authority-settings')); ?>"><?php wp_nonce_field('nae_register_site'); ?><input type="hidden" name="nae_connect" value="1"><?php submit_button('Connect NeoContent', 'primary', 'submit', false); ?></form><?php endif; ?>
         </div><?php
     }
 
     public function register_site(): void {
+        if (strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? '')) !== 'POST' || empty($_POST['nae_connect'])) return;
         $this->authorize('nae_register_site');
         $s = get_option(NAE_OPTION, []);
         $s['connection_status'] = 'queued';
