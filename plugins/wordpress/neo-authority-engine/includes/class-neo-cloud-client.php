@@ -91,23 +91,31 @@ final class Neo_Cloud_Client {
         return is_array($decoded) ? $decoded : [];
     }
 
-    public function register_site(array $profile) {
+    public function registration_package(array $profile) {
         $settings = $this->settings();
-        $initial = ($settings['registered'] ?? '0') !== '1';
-        $extra_headers = $initial ? ['X-Neo-Connection-Request' => '1'] : [];
+        if (empty($settings['cloud_url']) || !$this->valid_cloud_url((string)$settings['cloud_url'])) {
+            return new WP_Error('nae_cloud_invalid', 'Neo Authority Cloud URL is not trusted.');
+        }
+        if (strlen((string)$settings['site_secret']) < 32) {
+            return new WP_Error('nae_secret_invalid', 'Neo Authority site secret is unavailable.');
+        }
         $payload = array_merge([
             'siteId' => $settings['site_id'],
             'siteSecret' => $settings['site_secret'],
             'websiteUrl' => home_url('/'),
             'callbackUrl' => rest_url('neo-authority/v1/publish'),
         ], $profile);
-        return $this->request(
-            'POST',
-            '/api/v1/sites/register',
-            $payload,
-            $extra_headers,
-            $initial ? 'registration' : 'plugin-to-cloud'
-        );
+        $body = $this->canonical_json($payload);
+        $headers = $this->headers('POST', '/api/v1/sites/register', $body, 'registration');
+        if (!$headers) return new WP_Error('nae_signing_failed', 'Neo Authority request signing failed.');
+        $headers['X-Neo-Connection-Request'] = '1';
+        $headers['X-Neo-Browser-Connection'] = '1';
+        return [
+            'url' => untrailingslashit((string)$settings['cloud_url']) . '/api/v1/sites/register',
+            'payload' => $payload,
+            'body' => $body,
+            'headers' => $headers,
+        ];
     }
 
     public function sync_knowledge_candidates(array $candidates) {

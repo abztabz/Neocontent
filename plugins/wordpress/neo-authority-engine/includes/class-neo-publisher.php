@@ -11,11 +11,29 @@ final class Neo_Publisher {
         register_rest_route('neo-authority/v1', '/publish', [
             'methods' => 'POST',
             'callback' => [$this, 'publish'],
-            'permission_callback' => [$this, 'verify_signature'],
+            'permission_callback' => [$this, 'verify_publish_signature'],
+        ]);
+        register_rest_route('neo-authority/v1', '/connection-proof', [
+            'methods' => 'GET',
+            'callback' => [$this, 'connection_proof'],
+            'permission_callback' => '__return_true',
+        ]);
+        register_rest_route('neo-authority/v1', '/activate', [
+            'methods' => 'POST',
+            'callback' => [$this, 'activate'],
+            'permission_callback' => [$this, 'verify_activation_signature'],
         ]);
     }
 
-    public function verify_signature(WP_REST_Request $request) {
+    public function verify_publish_signature(WP_REST_Request $request) {
+        return $this->verify_signature($request, 'publish', 'neo-cloud-to-wordpress-v1', 750000);
+    }
+
+    public function verify_activation_signature(WP_REST_Request $request) {
+        return $this->verify_signature($request, 'activate', 'neo-cloud-activation-v1', 4096);
+    }
+
+    private function verify_signature(WP_REST_Request $request, string $route, string $purpose, int $maximum_body) {
         $settings = get_option(NAE_OPTION, []);
         $site_id = (string)($settings['site_id'] ?? '');
         if (!$site_id || !hash_equals($site_id, (string)$request->get_header('x-neo-site-id'))) {
@@ -26,26 +44,67 @@ final class Neo_Publisher {
         if (!$timestamp || !$signature || !ctype_digit($timestamp) || abs(time() - (int)$timestamp) > 300) {
             return new WP_Error('nae_stale_signature', 'Request signature is missing or stale.', ['status' => 401]);
         }
-        if (strlen($request->get_body()) > 750000) {
-            return new WP_Error('nae_payload_too_large', 'Publish payload is too large.', ['status' => 413]);
+        if (strlen($request->get_body()) > $maximum_body) {
+            return new WP_Error('nae_payload_too_large', 'Signed payload is too large.', ['status' => 413]);
         }
 
-        $path = (string)wp_parse_url(rest_url('neo-authority/v1/publish'), PHP_URL_PATH);
+        $path = (string)wp_parse_url(rest_url('neo-authority/v1/' . $route), PHP_URL_PATH);
         $canonical = "POST\n{$path}\n{$timestamp}\n" . hash('sha256', $request->get_body());
         $secret = Neo_Secret_Store::get();
         if (strlen($secret) < 32) return new WP_Error('nae_secret_missing', 'Site secret is unavailable.', ['status' => 503]);
-        $signing_key = hash_hmac('sha256', 'neo-cloud-to-wordpress-v1', $secret, true);
+        $signing_key = hash_hmac('sha256', $purpose, $secret, true);
         $expected = hash_hmac('sha256', $canonical, $signing_key);
         if (!hash_equals($expected, $signature)) {
             return new WP_Error('nae_bad_signature', 'Request signature is invalid.', ['status' => 401]);
         }
 
-        $replay_key = 'nae_replay_' . hash('sha256', $site_id . ':' . $timestamp . ':' . $signature);
+        $replay_key = 'nae_replay_' . hash('sha256', $route . ':' . $site_id . ':' . $timestamp . ':' . $signature);
         if (get_transient($replay_key) !== false) {
             return new WP_Error('nae_replay', 'Signed request replay detected.', ['status' => 409]);
         }
         set_transient($replay_key, '1', 10 * MINUTE_IN_SECONDS);
         return true;
+    }
+
+    public function connection_proof() {
+        $settings = get_option(NAE_OPTION, []);
+        $site_id = (string)($settings['site_id'] ?? '');
+        $secret = Neo_Secret_Store::get();
+        $home = wp_parse_url(home_url('/'));
+        if (!$site_id || strlen($secret) < 32 || !is_array($home) || strtolower((string)($home['scheme'] ?? '')) !== 'https') {
+            return new WP_Error('nae_proof_unavailable', 'Connection proof is unavailable.', ['status' => 503]);
+        }
+        $origin = 'https://' . strtolower((string)($home['host'] ?? ''));
+        if (!empty($home['port']) && (int)$home['port'] !== 443) $origin .= ':' . (int)$home['port'];
+        $key = hash_hmac('sha256', 'neo-connection-proof-v1', $secret, true);
+        return rest_ensure_response([
+            'siteId' => $site_id,
+            'origin' => $origin,
+            'proof' => hash_hmac('sha256', $site_id . "\n" . $origin, $key),
+            'version' => NAE_VERSION,
+        ]);
+    }
+
+    public function activate(WP_REST_Request $request) {
+        $settings = get_option(NAE_OPTION, []);
+        $site_id = (string)($settings['site_id'] ?? '');
+        if ((string)$request->get_param('status') !== 'active'
+            || !hash_equals($site_id, (string)$request->get_param('siteId'))) {
+            return new WP_Error('nae_activation_invalid', 'Activation payload is invalid.', ['status' => 400]);
+        }
+        $current = sanitize_key((string)($settings['connection_status'] ?? 'not_connected'));
+        if (($settings['registered'] ?? '0') === '1' && $current === 'active') {
+            return rest_ensure_response(['status' => 'active']);
+        }
+        if (!in_array($current, ['browser_pending', 'pending'], true)) {
+            return new WP_Error('nae_activation_state', 'Activation is not pending.', ['status' => 409]);
+        }
+        $settings['registered'] = '1';
+        $settings['connection_status'] = 'active';
+        update_option(NAE_OPTION, $settings, false);
+        wp_clear_scheduled_hook('nae_connection_check');
+        wp_clear_scheduled_hook('nae_operator_sync');
+        return rest_ensure_response(['status' => 'active']);
     }
 
     public function publish(WP_REST_Request $request) {

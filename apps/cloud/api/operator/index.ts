@@ -8,6 +8,7 @@ import { assertOperatorCsrf, assertSameOrigin, isOperatorAuthenticated, operator
 import { notifyOperatorSafely, removeOperatorSubscription, saveOperatorSubscription, sendOperatorNotification } from "../../src/operator/push-notifications.js";
 import { decryptSecret } from "../../src/security/secret-vault.js";
 import { registerSite, type RegisterSiteInput } from "../../src/sites/register-site.js";
+import { activateWordPressSite } from "../../src/sites/wordpress-connection.js";
 
 function html(value: unknown): string {
   return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[character] ?? character);
@@ -135,7 +136,7 @@ export default async function handler(request: VercelRequestLike, response: Verc
       if (!connection || connection.status !== "pending") throw new Error("Pending site connection was not found");
       if (body.action === "approve_connection") {
         const profile = connection.profile as Record<string, unknown>;
-        await registerSite(repository, {
+        const site = await registerSite(repository, {
           ...profile,
           siteId: String(connection.external_site_id),
           siteSecret: decryptSecret(String(connection.encrypted_site_secret)),
@@ -143,6 +144,8 @@ export default async function handler(request: VercelRequestLike, response: Verc
           callbackUrl: String(connection.callback_url),
           businessName: String(connection.business_name),
         } as RegisterSiteInput);
+        if (!site) throw new Error("Registered site was not returned");
+        await activateWordPressSite(site);
         await repository.updatePendingSiteConnection(connectionId, { status: "approved", reviewed_at: new Date().toISOString() });
       } else {
         await repository.updatePendingSiteConnection(connectionId, { status: "rejected", reviewed_at: new Date().toISOString() });

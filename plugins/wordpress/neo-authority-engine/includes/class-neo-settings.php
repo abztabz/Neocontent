@@ -9,8 +9,7 @@ final class Neo_Settings {
         $this->client = $client;
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_init', [$this, 'register']);
-        add_action('admin_post_nae_register_site', [$this, 'register_site']);
-        add_action('nae_connection_check', [$this, 'check_connection']);
+        add_action('admin_init', [$this, 'handle_connection_request']);
     }
 
     public function menu(): void {
@@ -113,32 +112,29 @@ final class Neo_Settings {
                 </table><?php submit_button('Save settings'); ?>
             </form>
             <?php
-            $connecting = in_array(($s['connection_status'] ?? ''), ['queued', 'pending'], true);
+            $connecting = in_array(($s['connection_status'] ?? ''), ['browser_pending', 'pending'], true);
             $status = $s['registered'] === '1' ? 'Active' : ($connecting ? 'Connecting' : (($s['connection_status'] ?? '') === 'support_required' ? 'Needs assistance' : 'Not connected'));
             ?>
             <hr><p>Service status: <strong><?php echo esc_html($status); ?></strong></p>
-            <?php if ($s['registered'] !== '1' && !$connecting): ?><form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><?php wp_nonce_field('nae_register_site'); ?><input type="hidden" name="action" value="nae_register_site"><?php submit_button('Connect NeoContent', 'primary', 'submit', false); ?></form><?php endif; ?>
+            <?php if ($s['registered'] !== '1' && !$connecting): ?><form method="post" action="<?php echo esc_url(add_query_arg('page', 'neo-authority-settings', admin_url('admin.php'))); ?>"><?php wp_nonce_field('nae_register_site'); ?><input type="hidden" name="nae_action" value="register_site"><?php submit_button('Connect NeoContent', 'primary', 'submit', false); ?></form><?php endif; ?>
+            <?php if ($s['registered'] !== '1' && $connecting) $this->render_browser_connection($s); ?>
         </div><?php
     }
 
-    public function register_site(): void {
+    public function handle_connection_request(): void {
+        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' || ($_POST['nae_action'] ?? '') !== 'register_site') return;
         $this->authorize('nae_register_site');
         $s = get_option(NAE_OPTION, []);
-        $s['connection_status'] = 'queued';
-        if (empty($s['connection_requested_at'])) $s['connection_requested_at'] = time();
+        $s['connection_status'] = 'browser_pending';
+        $s['connection_requested_at'] = time();
         update_option(NAE_OPTION, $s, false);
         wp_clear_scheduled_hook('nae_connection_check');
-        wp_schedule_single_event(time() + 1, 'nae_connection_check');
-        $this->redirect('NeoContent is connecting. Setup will complete automatically.');
+        wp_clear_scheduled_hook('nae_operator_sync');
+        $this->redirect('NeoContent connection request is ready. Keep this page open briefly while it is sent securely.');
     }
 
-    public function check_connection(): void {
-        $this->attempt_connection();
-    }
-
-    private function attempt_connection(): string {
-        $s = get_option(NAE_OPTION, []);
-        $result = $this->client->register_site([
+    private function render_browser_connection(array $s): void {
+        $package = $this->client->registration_package([
             'businessName' => $s['business_name'] ?? get_bloginfo('name'), 'businessDescription' => $s['business_description'] ?? '',
             'industry' => $s['industry'] ?? '', 'targetAudience' => $s['target_audience'] ?? '', 'tone' => $s['tone'] ?? '',
             'services' => array_values(array_filter(array_map('trim', explode(',', $s['services'] ?? '')))),
@@ -146,34 +142,30 @@ final class Neo_Settings {
             'contentMode' => $s['content_mode'] ?? 'balanced', 'publishMode' => $s['publish_mode'] ?? 'approval_required',
             'cadence' => $s['cadence'] ?? 'weekly', 'knowledgeReviewRequired' => ($s['knowledge_review_required'] ?? '1') === '1',
         ]);
-        if (is_wp_error($result)) {
-            $s['connection_status'] = 'support_required';
-            update_option(NAE_OPTION, $s, false);
-            $code = (string)$result->get_error_code();
-            $reference = in_array($code, ['nae_secret_invalid', 'nae_signing_failed'], true) ? 'C01'
-                : (in_array($code, ['nae_cloud_missing', 'nae_cloud_invalid'], true) ? 'C02'
-                : ($code === 'http_request_failed' ? 'C03' : 'C04'));
-            return 'NeoContent could not connect. Please contact support. Reference: NEO-' . $reference;
+        if (is_wp_error($package)) {
+            echo '<p class="notice notice-error"><strong>NeoContent could not prepare the connection request. Reference: NEO-C01.</strong></p>';
+            return;
         }
-        $status = sanitize_key((string)($result['status'] ?? ''));
-        if ($status === 'registered') {
-            $s['registered'] = '1';
-            $s['connection_status'] = 'active';
-            update_option(NAE_OPTION, $s, false);
-            wp_clear_scheduled_hook('nae_connection_check');
-            wp_schedule_single_event(time() + 10, 'nae_operator_sync');
-            return 'NeoContent is connected.';
-        }
-        if ($status === 'pending') {
-            $s['connection_status'] = 'pending';
-            if (empty($s['connection_requested_at'])) $s['connection_requested_at'] = time();
-            update_option(NAE_OPTION, $s, false);
-            if (!wp_next_scheduled('nae_connection_check')) wp_schedule_single_event(time() + 300, 'nae_connection_check');
-            return 'NeoContent is connecting. Setup will complete automatically.';
-        }
-        $s['connection_status'] = 'support_required';
-        update_option(NAE_OPTION, $s, false);
-        return 'NeoContent needs assistance. Please contact support.';
+        $browser = [
+            'url' => $package['url'],
+            'body' => $package['body'],
+            'headers' => $package['headers'],
+        ];
+        ?><p id="nae-browser-connection" aria-live="polite">Sending secure connection request…</p>
+        <script>
+        (() => {
+          const status = document.getElementById('nae-browser-connection');
+          const request = <?php echo wp_json_encode($browser, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
+          fetch(request.url, {method: 'POST', mode: 'cors', credentials: 'omit', redirect: 'error', cache: 'no-store', headers: request.headers, body: request.body})
+            .then(async response => {
+              const result = await response.json().catch(() => ({}));
+              if (!response.ok || !['pending', 'registered'].includes(result.status)) throw new Error('connection_failed');
+              status.textContent = result.status === 'registered' ? 'NeoContent is connected. Refreshing…' : 'Connection request sent. Waiting for secure approval.';
+              if (result.status === 'registered') window.setTimeout(() => window.location.reload(), 1200);
+            })
+            .catch(() => { status.textContent = 'The connection request could not be sent. Your website is safe; refresh this page to retry.'; });
+        })();
+        </script><?php
     }
 
     private function authorize(string $nonce): void { if (!current_user_can('manage_options')) wp_die('Not allowed'); check_admin_referer($nonce); }

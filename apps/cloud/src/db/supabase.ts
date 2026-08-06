@@ -75,6 +75,12 @@ export class SupabaseRepository {
     return rows[0] ?? null;
   }
 
+  async findPendingSiteConnectionByWebsite(websiteUrl: string) {
+    const query = new URLSearchParams({ select: "*", website_url: `eq.${websiteUrl}`, status: "eq.pending", limit: "1" });
+    const rows = await this.request<Record<string, unknown>[]>(`pending_site_connections?${query.toString()}`);
+    return rows[0] ?? null;
+  }
+
   async findPendingSiteConnectionById(id: string) {
     const query = new URLSearchParams({ select: "*", id: `eq.${id}`, limit: "1" });
     const rows = await this.request<Record<string, unknown>[]>(`pending_site_connections?${query.toString()}`);

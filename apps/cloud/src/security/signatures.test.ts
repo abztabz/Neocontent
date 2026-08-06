@@ -61,3 +61,12 @@ test("separates plugin and WordPress signing directions", () => {
     false,
   );
 });
+
+test("separates activation and publishing signatures", () => {
+  const body = canonicalJson({ status: "active", siteId: "site-1" });
+  const activationSignature = signRequest({ secret, purpose: "cloud-activation", method: "POST", path: "/activate", timestamp, body });
+  assert.equal(
+    verifyRequest({ secret, purpose: "cloud-to-wordpress", method: "POST", path: "/activate", timestamp, body, signature: activationSignature, now }),
+    false,
+  );
+});
