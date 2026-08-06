@@ -113,17 +113,23 @@ final class Neo_Settings {
                 </table><?php submit_button('Save settings'); ?>
             </form>
             <?php
-            $status = $s['registered'] === '1' ? 'Active' : (($s['connection_status'] ?? '') === 'pending' ? 'Connecting' : (($s['connection_status'] ?? '') === 'support_required' ? 'Needs assistance' : 'Not connected'));
+            $connecting = in_array(($s['connection_status'] ?? ''), ['queued', 'pending'], true);
+            $status = $s['registered'] === '1' ? 'Active' : ($connecting ? 'Connecting' : (($s['connection_status'] ?? '') === 'support_required' ? 'Needs assistance' : 'Not connected'));
             ?>
             <hr><p>Service status: <strong><?php echo esc_html($status); ?></strong></p>
-            <?php if ($s['registered'] !== '1' && ($s['connection_status'] ?? '') !== 'pending'): ?><form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><?php wp_nonce_field('nae_register_site'); ?><input type="hidden" name="action" value="nae_register_site"><?php submit_button('Connect NeoContent', 'primary', 'submit', false); ?></form><?php endif; ?>
+            <?php if ($s['registered'] !== '1' && !$connecting): ?><form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><?php wp_nonce_field('nae_register_site'); ?><input type="hidden" name="action" value="nae_register_site"><?php submit_button('Connect NeoContent', 'primary', 'submit', false); ?></form><?php endif; ?>
         </div><?php
     }
 
     public function register_site(): void {
         $this->authorize('nae_register_site');
-        $message = $this->attempt_connection();
-        $this->redirect($message);
+        $s = get_option(NAE_OPTION, []);
+        $s['connection_status'] = 'queued';
+        if (empty($s['connection_requested_at'])) $s['connection_requested_at'] = time();
+        update_option(NAE_OPTION, $s, false);
+        wp_clear_scheduled_hook('nae_connection_check');
+        wp_schedule_single_event(time() + 1, 'nae_connection_check');
+        $this->redirect('NeoContent is connecting. Setup will complete automatically.');
     }
 
     public function check_connection(): void {
