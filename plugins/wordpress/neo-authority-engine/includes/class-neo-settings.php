@@ -143,7 +143,11 @@ final class Neo_Settings {
         if (is_wp_error($result)) {
             $s['connection_status'] = 'support_required';
             update_option(NAE_OPTION, $s, false);
-            return 'NeoContent could not connect. Please contact support.';
+            $code = (string)$result->get_error_code();
+            $reference = in_array($code, ['nae_secret_invalid', 'nae_signing_failed'], true) ? 'C01'
+                : (in_array($code, ['nae_cloud_missing', 'nae_cloud_invalid'], true) ? 'C02'
+                : ($code === 'http_request_failed' ? 'C03' : 'C04'));
+            return 'NeoContent could not connect. Please contact support. Reference: NEO-' . $reference;
         }
         $status = sanitize_key((string)($result['status'] ?? ''));
         if ($status === 'registered') {
