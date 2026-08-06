@@ -58,7 +58,7 @@ Do not expose Production secrets to Preview deployments. Use a separate Supabase
 
 ## 4. WordPress
 
-Download the `neo-authority-engine-wordpress-v1.4.3` artifact from the latest successful CI run and upload the ZIP under **Plugins → Add New → Upload Plugin**. Website owners connect with one button; no license or enrollment key is shown. Connection runs in a bounded background task so slow or blocked outbound HTTP cannot take down the WordPress admin request. New sites remain pending until approved in the private operator dashboard.
+Download the `neo-authority-engine-wordpress-v1.4.4` artifact from the latest successful CI run and upload the ZIP under **Plugins → Add New → Upload Plugin**. Website owners connect with one button; no license or enrollment key is shown. Activation uses the authenticated NeoContent admin page instead of the host-sensitive generic `admin-post.php` endpoint, then queues a bounded background connection task. New sites remain pending until approved in the private operator dashboard.
 
 During activation:
 
