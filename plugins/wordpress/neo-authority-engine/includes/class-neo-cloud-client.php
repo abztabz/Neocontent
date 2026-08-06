@@ -73,7 +73,8 @@ final class Neo_Cloud_Client {
         if (!$headers) return new WP_Error('nae_signing_failed', 'Neo Authority request signing failed.');
         $response = wp_remote_request(untrailingslashit($settings['cloud_url']) . $path, [
             'method' => $method,
-            'timeout' => 90,
+            'timeout' => 10,
+            'redirection' => 0,
             'headers' => $headers,
             'body' => $body,
         ]);
