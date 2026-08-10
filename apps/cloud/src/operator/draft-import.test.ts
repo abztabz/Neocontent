@@ -31,6 +31,13 @@ test("accepts short surrounding ChatGPT commentary", () => {
   assert.equal(parsed.payload.schemaVersion, "neo-blog-draft-v1");
 });
 
+test("repairs iOS smart quotes used as JSON delimiters without changing article quotations", () => {
+  const copiedFromIos = "{“schemaVersion”:“neo-blog-draft-v1”,“title”:“A governed draft”,“excerpt”:“Summary”,“bodyHtml”:”<p>Use the “impact test,” then verify it.</p>”,“seoTitle”:“SEO title”,“metaDescription”:“Description”,“focusKeyphrase”:“governed draft”,“rationale”:“Reason”,“sources”:[]}";
+  const parsed = parseDraftImport(copiedFromIos);
+  assert.equal(parsed.article.title, draft.title);
+  assert.equal(parsed.article.body, "<p>Use the “impact test,” then verify it.</p>");
+});
+
 test("rejects malformed JSON with an operator-friendly message", () => {
   assert.throws(() => parseDraftImport("{\nschemaVersion: neo-blog-draft-v1\n}"), /not valid JSON/);
 });

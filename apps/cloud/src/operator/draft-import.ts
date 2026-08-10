@@ -21,10 +21,57 @@ function jsonCandidate(raw: string): string {
   return value;
 }
 
+function nextNonWhitespace(value: string, start: number): number {
+  let index = start;
+  while (index < value.length && /\s/.test(value[index])) index += 1;
+  return index;
+}
+
+function smartQuoteClosesString(value: string, index: number): boolean {
+  const next = nextNonWhitespace(value, index + 1);
+  if (next >= value.length || [":", "}", "]"].includes(value[next])) return true;
+  if (value[next] !== ",") return false;
+  const following = nextNonWhitespace(value, next + 1);
+  if (following >= value.length) return true;
+  return /["“”{[\]tfn\d-]/.test(value[following]);
+}
+
+function normalizeStructuralSmartQuotes(value: string): string {
+  let normalized = "";
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (!inString && (character === "“" || character === "”")) {
+      normalized += '"';
+      inString = true;
+      escaped = false;
+      continue;
+    }
+    if (inString && (character === "“" || character === "”") && smartQuoteClosesString(value, index)) {
+      normalized += '"';
+      inString = false;
+      escaped = false;
+      continue;
+    }
+    normalized += character;
+    if (!inString) continue;
+    if (character === "\\" && !escaped) escaped = true;
+    else escaped = false;
+  }
+  return normalized;
+}
+
 export function parseDraftImport(raw: string): ParsedDraftImport {
   let payload: Record<string, unknown>;
   try {
-    const parsed = JSON.parse(jsonCandidate(raw)) as unknown;
+    const candidate = jsonCandidate(raw);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(candidate) as unknown;
+    } catch {
+      parsed = JSON.parse(normalizeStructuralSmartQuotes(candidate)) as unknown;
+    }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not-an-object");
     payload = parsed as Record<string, unknown>;
   } catch {
