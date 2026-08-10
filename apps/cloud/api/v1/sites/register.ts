@@ -111,8 +111,10 @@ export default async function handler(request: VercelRequestLike, response: Verc
   if (request.method !== "POST") return response.status(405).json({ error: { code: "METHOD_NOT_ALLOWED", message: "POST required" } });
   let navigation: BrowserNavigationEnvelope | null = null;
   let returnTarget: URL | null = null;
+  let stage = "parse-navigation";
   try {
     navigation = browserNavigationEnvelope(request.body);
+    stage = "validate-payload";
     const payload = navigation
       ? JSON.parse(navigation.payload) as RegisterSiteInput
       : (request.body ?? {}) as RegisterSiteInput;
@@ -125,12 +127,15 @@ export default async function handler(request: VercelRequestLike, response: Verc
       "x-neo-browser-connection": "1",
     } : normalizedHeaders(request);
     const validated = validateRegisterSiteInput(payload);
+    stage = "validate-return-url";
     if (navigation) returnTarget = validatedReturnUrl(navigation.returnUrl, validated.websiteUrl, validated.callbackUrl);
+    stage = "validate-browser-origin";
     assertBrowserConnectionOrigin(headers, origin, validated.websiteUrl);
     if (headers["x-neo-browser-connection"] === "1") {
       setCors(response, origin);
     }
     const repository = createRepository();
+    stage = "authorize-registration";
     const authorization = await authorizeRegistration(repository, {
       method: "POST",
       path: "/api/v1/sites/register",
@@ -144,13 +149,16 @@ export default async function handler(request: VercelRequestLike, response: Verc
         return response.status(200).json({ status: "support_required" });
       }
       if (!pending) {
+        stage = "check-pending-capacity";
         if (await repository.countPendingSiteConnections() >= 100) throw new Error("Connection request rate limit reached");
         const sameWebsite = await repository.findPendingSiteConnectionByWebsite(validated.websiteUrl);
         if (sameWebsite && String(sameWebsite.external_site_id ?? "") !== validated.siteId) {
           throw new Error("Website already has a pending connection request");
         }
+        stage = "verify-wordpress-proof";
         await verifyWordPressConnectionProof(validated);
         const { siteSecret: _secret, ...profile } = validated;
+        stage = "store-pending-connection";
         await repository.upsertPendingSiteConnection({
           external_site_id: validated.siteId,
           website_url: validated.websiteUrl,
@@ -162,10 +170,12 @@ export default async function handler(request: VercelRequestLike, response: Verc
         });
         await notifyOperatorSafely(repository, "connection_requested", `connection-requested:${validated.siteId}`);
       }
+      stage = "mark-wordpress-pending";
       await markWordPressConnectionPending(validated);
       if (navigation && returnTarget) return redirectBrowser(response, returnTarget, navigation.state, "sent");
       return response.status(202).json({ status: "pending" });
     }
+    stage = "register-existing-site";
     const result = await handleRegisterSite(payload);
     const site = await repository.findSiteByExternalId(validated.siteId);
     if (!site) throw new Error("Registered site was not found");
@@ -173,6 +183,12 @@ export default async function handler(request: VercelRequestLike, response: Verc
     if (navigation && returnTarget) return redirectBrowser(response, returnTarget, navigation.state, "sent");
     response.status(result.status).json(result.body);
   } catch (error) {
+    console.warn("[site-registration] rejected", {
+      stage,
+      browserNavigation: Boolean(navigation),
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      errorMessage: error instanceof Error ? error.message : "Unknown registration error",
+    });
     if (navigation && returnTarget) return redirectBrowser(response, returnTarget, navigation.state, "error");
     sendError(response, error);
   }
