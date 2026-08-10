@@ -1,12 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { createRepository } from "../../src/runtime.js";
 import { publishToWordPress } from "../../src/publishing/wordpress-publisher.js";
-import type { GeneratedArticle } from "../../src/writing/article-writer.js";
 import type { VercelRequestLike, VercelResponseLike } from "../_http.js";
 import { operatorSessionDigest, verifyOperatorToken } from "../../src/operator/auth.js";
 import { assertOperatorCsrf, assertSameOrigin, isOperatorAuthenticated, operatorCookies } from "../../src/operator/http-auth.js";
 import { notifyOperatorSafely, removeOperatorSubscription, saveOperatorSubscription, sendOperatorNotification } from "../../src/operator/push-notifications.js";
 import { createInitialOperatorContentJob } from "../../src/operator/initial-content-job.js";
+import { parseDraftImport } from "../../src/operator/draft-import.js";
 import { decryptSecret } from "../../src/security/secret-vault.js";
 import { registerSite, type RegisterSiteInput } from "../../src/sites/register-site.js";
 import { activateWordPressSite } from "../../src/sites/wordpress-connection.js";
@@ -41,43 +41,6 @@ function sendHtml(response: VercelResponseLike, status: number, body: string): v
     :root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#17202a;background:#f4f6f8;font-synthesis:none}*{box-sizing:border-box}body{margin:0;background:#f4f6f8}button,input,textarea{font:inherit}.shell{width:min(920px,100%);margin:auto;padding:24px 18px 64px}.top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:22px}.eyebrow{margin:0 0 5px;color:#5f6b76;font-size:12px;font-weight:800;letter-spacing:.11em;text-transform:uppercase}h1{margin:0;font-size:clamp(26px,6vw,38px);line-height:1.08}.sub{margin:7px 0 0;color:#66727e;line-height:1.5}.badge{display:inline-flex;align-items:center;border-radius:999px;padding:6px 10px;background:#eaf7ef;color:#17663a;font-size:12px;font-weight:800;white-space:nowrap}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:0 0 18px}.stat{background:#fff;border:1px solid #e1e5e9;border-radius:14px;padding:14px}.stat strong{display:block;font-size:24px}.stat span{display:block;margin-top:2px;color:#66727e;font-size:12px}.controls{background:#fff;border:1px solid #dfe4e8;border-radius:16px;padding:14px;margin-bottom:18px}.control-label{margin:0 0 8px;color:#66727e;font-size:12px;font-weight:800;text-transform:uppercase}.segments{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:4px;border-radius:12px;background:#edf1f4}.segment{border-radius:9px;padding:9px 8px;color:#53606c;text-align:center;text-decoration:none;font-size:13px;font-weight:800}.segment.active{background:#fff;color:#1456a0;box-shadow:0 1px 5px rgba(23,32,42,.1)}.filters{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:10px;margin-top:12px}.search{width:100%;min-height:42px;border:1px solid #cfd6dc;border-radius:10px;padding:9px 11px}.toggle{display:flex;align-items:center;gap:7px;color:#53606c;font-size:13px;white-space:nowrap}.filter-button{min-height:42px;border:0;border-radius:10px;padding:9px 13px;background:#17202a;color:#fff;font-weight:800}.group-tools{display:flex;justify-content:flex-end;gap:8px;margin:0 0 18px}.group-button{border:1px solid #cfd6dc;border-radius:9px;padding:7px 10px;background:#fff;color:#53606c;font-size:12px;font-weight:800}.queue{margin:12px 0;border:1px solid #dfe4e8;border-radius:16px;background:#fff;overflow:hidden}.queue>.queue-head{display:flex;align-items:center;justify-content:space-between;margin:0;padding:15px 17px;color:#17202a}.queue>.queue-head::before{content:"›";margin-right:10px;color:#66727e;font-size:22px;line-height:1;transform:rotate(0);transition:transform .15s}.queue[open]>.queue-head::before{transform:rotate(90deg)}.queue-head h2{flex:1;margin:0;font-size:18px}.queue-body{padding:0 12px 12px;border-top:1px solid #edf0f2}.count{min-width:27px;border-radius:999px;padding:4px 8px;background:#e7ebef;text-align:center;font-size:12px;font-weight:800}.card{background:#fff;border:1px solid #dfe4e8;border-radius:14px;padding:17px;margin:12px 0;box-shadow:0 2px 10px rgba(23,32,42,.04)}.card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.customer{margin:0 0 5px;color:#53606c;font-size:13px;font-weight:750}.topic{margin:0;font-size:18px;line-height:1.35}.meta{margin:8px 0 0;color:#6a7580;font-size:13px;overflow-wrap:anywhere}.status{border-radius:999px;padding:6px 9px;background:#edf1f4;color:#46525d;font-size:11px;font-weight:850;white-space:nowrap}.status.ready{background:#e8f1ff;color:#1456a0}.status.changes{background:#fff1d7;color:#895600}.status.done{background:#eaf7ef;color:#17663a}.feedback{margin:14px 0 0;border-left:4px solid #e39a1c;background:#fff8e9;border-radius:8px;padding:10px 12px;line-height:1.45}details.action{margin-top:14px;border-top:1px solid #edf0f2;padding-top:12px}summary{cursor:pointer;color:#165dba;font-weight:800;list-style:none}summary::-webkit-details-marker{display:none}.brief-tools{display:flex;justify-content:flex-end;margin:10px 0 8px}.brief{width:100%;min-height:210px;border:1px solid #d9dee3;border-radius:11px;padding:12px;background:#f8fafb;color:#27313a;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.45;resize:vertical}.draft{width:100%;min-height:230px;margin-top:10px;border:1px solid #cfd6dc;border-radius:11px;padding:12px;resize:vertical}.button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;border:0;border-radius:10px;padding:10px 14px;background:#1468d2;color:#fff;font-weight:800;cursor:pointer}.button.secondary{min-height:38px;padding:7px 11px;background:#e8f1ff;color:#1456a0}.button:active{transform:translateY(1px)}.empty{background:#fff;border:1px dashed #cbd2d8;border-radius:14px;padding:24px;color:#687480;text-align:center}.queue-body>.empty{margin-top:12px}.login{width:min(440px,calc(100% - 36px));margin:10vh auto;background:#fff;border:1px solid #dfe4e8;border-radius:20px;padding:24px;box-shadow:0 14px 40px rgba(23,32,42,.12)}.login h1{font-size:28px}.login label{display:block;margin:20px 0 8px;font-weight:750}.login input{width:100%;min-height:48px;border:1px solid #cbd3da;border-radius:10px;padding:10px 12px}.login .button{width:100%;margin-top:14px}.toast{position:fixed;right:16px;bottom:16px;z-index:2;border-radius:10px;padding:11px 14px;background:#17202a;color:#fff;font-size:13px;font-weight:750;opacity:0;pointer-events:none;transition:opacity .2s}.toast.show{opacity:1}@media(max-width:640px){.shell{padding-top:18px}.top{display:block}.top .badge{margin-top:12px}.stats{grid-template-columns:repeat(2,1fr)}.filters{grid-template-columns:1fr}.filter-button{width:100%}.group-tools{justify-content:stretch}.group-button{flex:1;min-height:40px}.card-top{display:block}.status{display:inline-flex;margin-top:10px}.button{width:100%}.brief-tools .button{width:auto}}
     .priority{margin:0 0 18px;border:1px solid #f0c36b;border-radius:16px;padding:16px;background:#fff9ed}.priority h2{margin:0;font-size:18px}.priority-list{display:grid;gap:8px;margin-top:12px}.priority-item{display:flex;justify-content:space-between;gap:12px;border-radius:10px;padding:10px 12px;background:#fff;color:#17202a;text-decoration:none}.priority-item span{color:#895600;font-size:12px;font-weight:800}.timeline{display:flex;gap:5px;margin:14px 0 5px}.step{height:5px;flex:1;border-radius:999px;background:#dfe4e8}.step.done{background:#2c7a4b}.step.current{background:#e39a1c}.timing{margin:5px 0 0;color:#6a7580;font-size:12px}.note{width:100%;min-height:90px;margin:10px 0;border:1px solid #cfd6dc;border-radius:10px;padding:10px;resize:vertical}.audit-list{margin:10px 0 0;padding:0;list-style:none}.audit-list li{border-left:2px solid #dfe4e8;padding:0 0 12px 12px;color:#46525d;font-size:13px}.audit-list time{display:block;margin-top:3px;color:#7a858f;font-size:11px}.push-panel{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:0 0 18px;border:1px solid #dfe4e8;border-radius:16px;padding:15px;background:#fff}.push-panel h2{margin:0;font-size:16px}.push-panel p{margin:4px 0 0;color:#66727e;font-size:13px}.push-actions{display:flex;gap:8px}.push-actions .button{min-height:38px;padding:7px 11px}.push-status{font-weight:750}.push-status.on{color:#17663a}@media(max-width:640px){.push-panel{display:block}.push-actions{margin-top:12px}.push-actions .button{width:auto;flex:1}}
   </style></head><body>${page}</body></html>`);
-}
-
-function parseDraft(raw: string): GeneratedArticle {
-  if (raw.length < 2 || raw.length > 750_000) throw new Error("Draft JSON size is invalid");
-  const payload = JSON.parse(raw) as Record<string, unknown>;
-  if (payload.schemaVersion !== "neo-blog-draft-v1") throw new Error("Draft schema is invalid");
-  const title = String(payload.title ?? "").trim();
-  const body = String(payload.bodyHtml ?? "").trim();
-  if (!title || title.length > 1000 || !body || body.length > 500_000) throw new Error("Draft content is invalid");
-  const sources = Array.isArray(payload.sources) ? payload.sources.slice(0, 50).flatMap((source, index) => {
-    if (!source || typeof source !== "object") return [];
-    const item = source as Record<string, unknown>;
-    const url = String(item.url ?? "");
-    try { if (new URL(url).protocol !== "https:") return []; } catch { return []; }
-    return [{
-      id: `manual-${index + 1}`,
-      title: String(item.title ?? "").slice(0, 500),
-      publisher: String(item.publisher ?? "").slice(0, 300),
-      url,
-      claimSupported: String(item.claimSupported ?? "").slice(0, 2000),
-      sourceType: "operator_verified",
-    }];
-  }) : [];
-  return {
-    title,
-    excerpt: String(payload.excerpt ?? "").slice(0, 8000),
-    body,
-    rationale: String(payload.rationale ?? "").slice(0, 20000),
-    authorityScore: 0,
-    businessAlignmentScore: 0,
-    verificationScore: 0,
-    sources,
-    materialClaims: [],
-    seoTitle: String(payload.seoTitle ?? "").slice(0, 1000),
-    metaDescription: String(payload.metaDescription ?? "").slice(0, 2000),
-    focusKeyphrase: String(payload.focusKeyphrase ?? "").slice(0, 500),
-  };
 }
 
 function operatorBrief(job: Record<string, unknown>): string {
@@ -180,7 +143,7 @@ export default async function handler(request: VercelRequestLike, response: Verc
       const job = await repository.findOperatorContentJob(jobId);
       if (!job) throw new Error("Operator content job was not found");
       if (!["brief_ready", "changes_requested"].includes(String(job.status))) throw new Error("This job cannot accept a draft in its current state");
-      const article = parseDraft(String(body.draft_json ?? ""));
+      const { article, payload: draftPayload } = parseDraftImport(String(body.draft_json ?? ""));
       const site = job.sites as Record<string, unknown>;
       let wordpress;
       try {
@@ -191,7 +154,7 @@ export default async function handler(request: VercelRequestLike, response: Verc
       }
       await repository.updateOperatorContentJob(jobId, {
         status: "delivered",
-        draft_payload: JSON.parse(String(body.draft_json)),
+        draft_payload: draftPayload,
         external_post_id: String(wordpress.externalId ?? ""),
         delivered_at: new Date().toISOString(),
       });
