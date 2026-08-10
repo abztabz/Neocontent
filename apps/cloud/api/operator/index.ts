@@ -6,6 +6,7 @@ import type { VercelRequestLike, VercelResponseLike } from "../_http.js";
 import { operatorSessionDigest, verifyOperatorToken } from "../../src/operator/auth.js";
 import { assertOperatorCsrf, assertSameOrigin, isOperatorAuthenticated, operatorCookies } from "../../src/operator/http-auth.js";
 import { notifyOperatorSafely, removeOperatorSubscription, saveOperatorSubscription, sendOperatorNotification } from "../../src/operator/push-notifications.js";
+import { createInitialOperatorContentJob } from "../../src/operator/initial-content-job.js";
 import { decryptSecret } from "../../src/security/secret-vault.js";
 import { registerSite, type RegisterSiteInput } from "../../src/sites/register-site.js";
 import { activateWordPressSite } from "../../src/sites/wordpress-connection.js";
@@ -150,6 +151,8 @@ export default async function handler(request: VercelRequestLike, response: Verc
         if (!site) throw new Error("Registered site was not returned");
         connectionStage = "activate-wordpress";
         await activateWordPressSite(site);
+        connectionStage = "create-initial-research";
+        await createInitialOperatorContentJob(repository, site);
         connectionStage = "mark-approved";
         await repository.updatePendingSiteConnection(connectionId, { status: "approved", reviewed_at: new Date().toISOString() });
       } else {
