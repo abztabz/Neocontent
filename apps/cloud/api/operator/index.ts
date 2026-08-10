@@ -127,10 +127,8 @@ export default async function handler(request: VercelRequestLike, response: Verc
     return;
   }
   if (request.method === "POST" && ["approve_connection", "reject_connection"].includes(String(body.action))) {
-    let connectionStage = "origin";
+    let connectionStage = "csrf";
     try {
-      assertSameOrigin(request);
-      connectionStage = "csrf";
       assertOperatorCsrf(request, body);
       connectionStage = "connection-id";
       const connectionId = String(body.connection_id ?? "");
