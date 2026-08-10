@@ -118,6 +118,12 @@ final class Neo_Cloud_Client {
         ];
     }
 
+    public function registration_url(): string {
+        $settings = $this->settings();
+        if (empty($settings['cloud_url']) || !$this->valid_cloud_url((string)$settings['cloud_url'])) return '';
+        return untrailingslashit((string)$settings['cloud_url']) . '/api/v1/sites/register';
+    }
+
     public function sync_knowledge_candidates(array $candidates) {
         $settings = $this->settings();
         return $this->request(
