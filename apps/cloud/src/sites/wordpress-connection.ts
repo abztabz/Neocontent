@@ -98,3 +98,46 @@ export async function activateWordPressSite(
     throw new Error(`WordPress activation returned HTTP ${response.status}`);
   }
 }
+
+export async function markWordPressConnectionPending(
+  input: RegisterSiteInput,
+  requester: WordPressRequester = requestWordPressPinned,
+): Promise<void> {
+  const callback = new URL(input.callbackUrl);
+  if (callback.protocol !== "https:" || callback.username || callback.password || (callback.port && callback.port !== "443")) {
+    throw new Error("WordPress callback URL is invalid");
+  }
+  if (!/(?:^|\/)wp-json\/neo-authority\/v1\/publish\/?$/.test(callback.pathname)) {
+    throw new Error("WordPress callback path is invalid");
+  }
+  const pendingUrl = new URL(callback.toString());
+  pendingUrl.pathname = callback.pathname.replace(/publish\/?$/, "connection-pending");
+  pendingUrl.search = "";
+  pendingUrl.hash = "";
+  const body = JSON.stringify({ status: "pending", siteId: input.siteId });
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = signRequest({
+    secret: input.siteSecret,
+    purpose: "cloud-pending",
+    method: "POST",
+    path: pendingUrl.pathname,
+    timestamp,
+    body,
+  });
+  const response = await requester({
+    url: pendingUrl,
+    method: "POST",
+    body,
+    headers: {
+      "content-type": "application/json",
+      "x-neo-site-id": input.siteId,
+      "x-neo-timestamp": timestamp,
+      "x-neo-signature": signature,
+    },
+    timeoutMs: 8_000,
+    maximumBytes: 16_384,
+  });
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`WordPress pending callback returned HTTP ${response.status}`);
+  }
+}

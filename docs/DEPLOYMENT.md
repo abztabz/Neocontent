@@ -58,14 +58,14 @@ Do not expose Production secrets to Preview deployments. Use a separate Supabase
 
 ## 4. WordPress
 
-Download the `neo-authority-engine-wordpress-v1.5.1` artifact from the latest successful CI run and upload the ZIP under **Plugins → Add New → Upload Plugin**. Website owners connect with one button; no license or enrollment key is shown. The browser relays the signed connection package through a normal HTTPS form transition, so onboarding does not depend on cross-origin JavaScript. WordPress performs no activation-time outbound request and runs no NeoContent polling cron. New sites remain pending until approved in the private operator dashboard, after which the cloud sends a purpose-separated signed activation callback to WordPress.
+Download the `neo-authority-engine-wordpress-v1.5.2` artifact from the latest successful CI run and upload the ZIP under **Plugins → Add New → Upload Plugin**. Website owners connect with one button; no license or enrollment key is shown. The Connect form posts directly from the browser to NeoContent, bypassing the customer host's constrained WordPress POST handling. NeoContent sends a purpose-separated signed callback that marks the plugin pending. WordPress performs no activation-time outbound request and runs no NeoContent polling cron. New sites remain pending until approved in the private operator dashboard, after which the cloud sends a separate signed activation callback to WordPress.
 
 During activation:
 
 1. Complete the business profile.
 2. Choose the content focus and cadence.
 3. Select **Connect NeoContent**.
-4. Leave the page open briefly while the browser sends the signed request.
+4. The browser returns after NeoContent securely marks the request pending.
 5. Approve the request in the private operator dashboard.
 
 After activation, the customer sees only **Researching** and **Drafts**. Private briefs and completed JSON are accessible only at `/api/operator` after operator authentication.

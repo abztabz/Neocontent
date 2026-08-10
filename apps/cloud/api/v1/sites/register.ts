@@ -7,7 +7,11 @@ import { normalizedHeaders, rawBody, sendError } from "../../_http.js";
 import { encryptSecret } from "../../../src/security/secret-vault.js";
 import { validateRegisterSiteInput } from "../../../src/sites/register-site.js";
 import { notifyOperatorSafely } from "../../../src/operator/push-notifications.js";
-import { activateWordPressSite, verifyWordPressConnectionProof } from "../../../src/sites/wordpress-connection.js";
+import {
+  activateWordPressSite,
+  markWordPressConnectionPending,
+  verifyWordPressConnectionProof,
+} from "../../../src/sites/wordpress-connection.js";
 
 interface BrowserNavigationEnvelope {
   schemaVersion: "neo-browser-navigation-v1";
@@ -158,6 +162,7 @@ export default async function handler(request: VercelRequestLike, response: Verc
         });
         await notifyOperatorSafely(repository, "connection_requested", `connection-requested:${validated.siteId}`);
       }
+      await markWordPressConnectionPending(validated);
       if (navigation && returnTarget) return redirectBrowser(response, returnTarget, navigation.state, "sent");
       return response.status(202).json({ status: "pending" });
     }
