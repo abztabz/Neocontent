@@ -127,14 +127,19 @@ export default async function handler(request: VercelRequestLike, response: Verc
     return;
   }
   if (request.method === "POST" && ["approve_connection", "reject_connection"].includes(String(body.action))) {
+    let connectionStage = "origin";
     try {
       assertSameOrigin(request);
+      connectionStage = "csrf";
       assertOperatorCsrf(request, body);
+      connectionStage = "connection-id";
       const connectionId = String(body.connection_id ?? "");
       if (!/^[0-9a-f-]{36}$/i.test(connectionId)) throw new Error("Connection identifier is invalid");
+      connectionStage = "pending-connection";
       const connection = await repository.findPendingSiteConnectionById(connectionId);
       if (!connection || connection.status !== "pending") throw new Error("Pending site connection was not found");
       if (body.action === "approve_connection") {
+        connectionStage = "register-site";
         const profile = connection.profile as Record<string, unknown>;
         const site = await registerSite(repository, {
           ...profile,
@@ -145,15 +150,24 @@ export default async function handler(request: VercelRequestLike, response: Verc
           businessName: String(connection.business_name),
         } as RegisterSiteInput);
         if (!site) throw new Error("Registered site was not returned");
+        connectionStage = "activate-wordpress";
         await activateWordPressSite(site);
+        connectionStage = "mark-approved";
         await repository.updatePendingSiteConnection(connectionId, { status: "approved", reviewed_at: new Date().toISOString() });
       } else {
+        connectionStage = "mark-rejected";
         await repository.updatePendingSiteConnection(connectionId, { status: "rejected", reviewed_at: new Date().toISOString() });
       }
       response.setHeader?.("location", "/api/operator");
       response.status(303).send?.("");
       return;
     } catch (error) {
+      console.warn("[operator-connection] rejected", {
+        stage: connectionStage,
+        action: String(body.action ?? "unknown"),
+        errorName: error instanceof Error ? error.name : "Error",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
       return sendHtml(response, 400, `<h1>Connection not updated</h1><p>${html(error instanceof Error ? error.message : error)}</p><p><a href="/api/operator">Return</a></p>`);
     }
   }
