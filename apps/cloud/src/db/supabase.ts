@@ -205,6 +205,17 @@ export class SupabaseRepository {
     return existing[0] ?? null;
   }
 
+  async findOperatorContentJobByIdempotencyKey(siteId: string, idempotencyKey: string) {
+    const query = new URLSearchParams({
+      select: "*",
+      site_id: `eq.${siteId}`,
+      idempotency_key: `eq.${idempotencyKey}`,
+      limit: "1",
+    });
+    const rows = await this.request<Record<string, unknown>[]>(`operator_content_jobs?${query.toString()}`);
+    return rows[0] ?? null;
+  }
+
   async listCustomerContentJobs(siteId: string, limit = 50) {
     const query = new URLSearchParams({
       select: "id,topic,customer_summary,status,created_at,updated_at,delivered_at,reviewed_at,external_post_id",
