@@ -1,7 +1,7 @@
 import { lookup } from "node:dns/promises";
 import { request as httpRequest, type RequestOptions } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { isIP } from "node:net";
+import { isIP, type LookupFunction } from "node:net";
 import { signRequest } from "../security/signatures.js";
 import { decryptSecret } from "../security/secret-vault.js";
 import type { GeneratedArticle } from "../writing/article-writer.js";
@@ -22,6 +22,16 @@ function isUnsafeAddress(address: string): boolean {
       || value.startsWith("fe80:") || (value.startsWith("::ffff:") && isUnsafeAddress(value.slice(7)));
   }
   return true;
+}
+
+export function pinnedWordPressLookup(destination: { address: string; family: number }): LookupFunction {
+  return (_hostname, options, callback) => {
+    if (options.all) {
+      callback(null, [{ address: destination.address, family: destination.family }]);
+      return;
+    }
+    callback(null, destination.address, destination.family);
+  };
 }
 
 export async function requestWordPressPinned(input: {
@@ -52,7 +62,7 @@ export async function requestWordPressPinned(input: {
         ...(input.method === "POST" ? { "content-length": String(Buffer.byteLength(input.body ?? "")) } : {}),
         "accept-encoding": "identity",
       },
-      lookup: (_hostname, _options, callback) => callback(null, destination.address, destination.family),
+      lookup: pinnedWordPressLookup(destination),
     };
     const request = (url.protocol === "https:" ? httpsRequest : httpRequest)(
       url.protocol === "https:" ? { ...options, servername: url.hostname } : options,
