@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Neo Authority Engine
  * Description: Governed business knowledge, trusted sources, and evidence-backed blog automation.
- * Version: 1.5.1
+ * Version: 1.5.2
  * Author: 108 Media
  * Requires at least: 6.2
  * Requires PHP: 8.0
@@ -10,7 +10,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('NAE_VERSION', '1.5.1');
+define('NAE_VERSION', '1.5.2');
 define('NAE_OPTION', 'nae_v1_settings');
 
 require_once __DIR__ . '/includes/class-neo-secret-store.php';

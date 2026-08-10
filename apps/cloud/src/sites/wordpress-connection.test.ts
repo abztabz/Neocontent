@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { createHmac, randomBytes } from "node:crypto";
 import { encryptSecret } from "../security/secret-vault.js";
 import { verifyRequest } from "../security/signatures.js";
-import { activateWordPressSite, verifyWordPressConnectionProof } from "./wordpress-connection.js";
+import {
+  activateWordPressSite,
+  markWordPressConnectionPending,
+  verifyWordPressConnectionProof,
+} from "./wordpress-connection.js";
 
 const siteId = "11111111-1111-4111-8111-111111111111";
 const siteSecret = "wordpress-test-secret-with-more-than-thirty-two-characters";
@@ -79,4 +83,39 @@ test("activation uses a purpose-separated signed callback without customer data"
     if (previousKey === undefined) delete process.env.NEO_SECRET_ENCRYPTION_KEY;
     else process.env.NEO_SECRET_ENCRYPTION_KEY = previousKey;
   }
+});
+
+test("pending state uses a separate signed callback before operator approval", async () => {
+  let pendingBody = "";
+  await markWordPressConnectionPending({
+    siteId,
+    siteSecret,
+    websiteUrl: "https://example.com/",
+    callbackUrl: "https://example.com/wp-json/neo-authority/v1/publish",
+    businessName: "Example",
+  }, async ({ url, method, body, headers }) => {
+    pendingBody = body ?? "";
+    assert.equal(url.pathname, "/wp-json/neo-authority/v1/connection-pending");
+    assert.equal(method, "POST");
+    assert.equal(verifyRequest({
+      secret: siteSecret,
+      purpose: "cloud-pending",
+      method: "POST",
+      path: url.pathname,
+      timestamp: headers?.["x-neo-timestamp"] ?? "",
+      body: body ?? "",
+      signature: headers?.["x-neo-signature"] ?? "",
+    }), true);
+    assert.equal(verifyRequest({
+      secret: siteSecret,
+      purpose: "cloud-activation",
+      method: "POST",
+      path: url.pathname,
+      timestamp: headers?.["x-neo-timestamp"] ?? "",
+      body: body ?? "",
+      signature: headers?.["x-neo-signature"] ?? "",
+    }), false);
+    return { status: 200, contentType: "application/json", body: '{"status":"pending"}' };
+  });
+  assert.deepEqual(JSON.parse(pendingBody), { status: "pending", siteId });
 });

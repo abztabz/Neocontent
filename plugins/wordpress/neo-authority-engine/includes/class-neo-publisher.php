@@ -23,6 +23,11 @@ final class Neo_Publisher {
             'callback' => [$this, 'activate'],
             'permission_callback' => [$this, 'verify_activation_signature'],
         ]);
+        register_rest_route('neo-authority/v1', '/connection-pending', [
+            'methods' => 'POST',
+            'callback' => [$this, 'connection_pending'],
+            'permission_callback' => [$this, 'verify_pending_signature'],
+        ]);
     }
 
     public function verify_publish_signature(WP_REST_Request $request) {
@@ -31,6 +36,10 @@ final class Neo_Publisher {
 
     public function verify_activation_signature(WP_REST_Request $request) {
         return $this->verify_signature($request, 'activate', 'neo-cloud-activation-v1', 4096);
+    }
+
+    public function verify_pending_signature(WP_REST_Request $request) {
+        return $this->verify_signature($request, 'connection-pending', 'neo-cloud-pending-v1', 4096);
     }
 
     private function verify_signature(WP_REST_Request $request, string $route, string $purpose, int $maximum_body) {
@@ -105,6 +114,24 @@ final class Neo_Publisher {
         wp_clear_scheduled_hook('nae_connection_check');
         wp_clear_scheduled_hook('nae_operator_sync');
         return rest_ensure_response(['status' => 'active']);
+    }
+
+    public function connection_pending(WP_REST_Request $request) {
+        $settings = get_option(NAE_OPTION, []);
+        $site_id = (string)($settings['site_id'] ?? '');
+        if ((string)$request->get_param('status') !== 'pending'
+            || !hash_equals($site_id, (string)$request->get_param('siteId'))) {
+            return new WP_Error('nae_pending_invalid', 'Pending connection payload is invalid.', ['status' => 400]);
+        }
+        if (($settings['registered'] ?? '0') === '1') {
+            return new WP_Error('nae_pending_active', 'Active connections cannot return to pending.', ['status' => 409]);
+        }
+        $settings['connection_status'] = 'browser_pending';
+        $settings['connection_requested_at'] = time();
+        update_option(NAE_OPTION, $settings, false);
+        wp_clear_scheduled_hook('nae_connection_check');
+        wp_clear_scheduled_hook('nae_operator_sync');
+        return rest_ensure_response(['status' => 'pending']);
     }
 
     public function publish(WP_REST_Request $request) {

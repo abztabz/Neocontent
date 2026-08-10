@@ -70,3 +70,11 @@ test("separates activation and publishing signatures", () => {
     false,
   );
 });
+
+test("separates pending and activation callbacks", () => {
+  const secret = "shared-secret-that-is-long-enough-for-tests";
+  const input = { method: "POST", path: "/wp-json/neo-authority/v1/connection-pending", timestamp: "1700000000", body: "{}" };
+  const pending = signRequest({ secret, purpose: "cloud-pending", ...input });
+  const activation = signRequest({ secret, purpose: "cloud-activation", ...input });
+  assert.notEqual(pending, activation);
+});

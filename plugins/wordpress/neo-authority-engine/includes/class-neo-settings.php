@@ -9,8 +9,6 @@ final class Neo_Settings {
         $this->client = $client;
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_init', [$this, 'register']);
-        add_action('admin_init', [$this, 'handle_connection_request']);
-        add_action('admin_init', [$this, 'handle_connection_return']);
     }
 
     public function menu(): void {
@@ -50,7 +48,6 @@ final class Neo_Settings {
             'registered' => sanitize_text_field($current['registered'] ?? '0'),
             'connection_status' => sanitize_key($current['connection_status'] ?? 'not_connected'),
             'connection_requested_at' => absint($current['connection_requested_at'] ?? 0),
-            'connection_relay_state_hash' => sanitize_text_field($current['connection_relay_state_hash'] ?? ''),
         ];
     }
 
@@ -96,7 +93,6 @@ final class Neo_Settings {
             'content_mode' => 'balanced', 'cadence' => 'weekly', 'knowledge_review_required' => '1', 'registered' => '0',
             'generation_mode' => 'operator_managed',
             'connection_status' => 'not_connected', 'connection_requested_at' => 0,
-            'connection_relay_state_hash' => '',
         ]);
         ?>
         <div class="wrap"><h1>Activate NeoContent</h1>
@@ -126,50 +122,6 @@ final class Neo_Settings {
         </div><?php
     }
 
-    public function handle_connection_request(): void {
-        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' || ($_POST['nae_action'] ?? '') !== 'register_site') return;
-        $this->authorize('nae_register_site');
-        $envelope = json_decode((string)wp_unslash($_POST['neo_connection_envelope'] ?? ''), true);
-        $timestamp = is_array($envelope) ? (int)($envelope['timestamp'] ?? 0) : 0;
-        $state = is_array($envelope) ? (string)($envelope['state'] ?? '') : '';
-        $s = get_option(NAE_OPTION, []);
-        $expected_state = (string)($s['connection_relay_state_hash'] ?? '');
-        if (!$timestamp || abs(time() - $timestamp) > 240 || strlen($state) < 32
-            || !$expected_state || !hash_equals($expected_state, hash('sha256', $state))) {
-            $s['connection_status'] = 'not_connected';
-            $s['connection_relay_state_hash'] = '';
-            update_option(NAE_OPTION, $s, false);
-            $this->redirect('The secure connection form was refreshed. Press Connect NeoContent again.');
-        }
-        $target = $this->client->registration_url();
-        if ($target === '') {
-            $s['connection_status'] = 'not_connected';
-            $s['connection_relay_state_hash'] = '';
-            update_option(NAE_OPTION, $s, false);
-            $this->redirect('NeoContent could not prepare the secure connection. Reference: NEO-C02.');
-        }
-        $s['connection_status'] = 'browser_pending';
-        $s['connection_requested_at'] = time();
-        update_option(NAE_OPTION, $s, false);
-        wp_clear_scheduled_hook('nae_connection_check');
-        wp_clear_scheduled_hook('nae_operator_sync');
-        wp_redirect($target, 307, 'NeoContent');
-        exit;
-    }
-
-    public function handle_connection_return(): void {
-        if (!current_user_can('manage_options') || empty($_GET['nae_connection']) || empty($_GET['nae_state'])) return;
-        $result = sanitize_key((string)wp_unslash($_GET['nae_connection']));
-        if (!in_array($result, ['sent', 'error'], true)) return;
-        $state = sanitize_text_field((string)wp_unslash($_GET['nae_state']));
-        $s = get_option(NAE_OPTION, []);
-        $expected = (string)($s['connection_relay_state_hash'] ?? '');
-        if (!$expected || !hash_equals($expected, hash('sha256', $state))) return;
-        $s['connection_relay_state_hash'] = '';
-        $s['connection_status'] = $result === 'sent' ? 'browser_pending' : 'not_connected';
-        update_option(NAE_OPTION, $s, false);
-    }
-
     private function render_connect_form(array $s): void {
         $package = $this->client->registration_package([
             'businessName' => $s['business_name'] ?? get_bloginfo('name'), 'businessDescription' => $s['business_description'] ?? '',
@@ -184,9 +136,6 @@ final class Neo_Settings {
             return;
         }
         $state = wp_generate_password(48, false, false);
-        $current = get_option(NAE_OPTION, []);
-        $current['connection_relay_state_hash'] = hash('sha256', $state);
-        update_option(NAE_OPTION, $current, false);
         $envelope = [
             'schemaVersion' => 'neo-browser-navigation-v1',
             'payload' => $package['body'],
@@ -196,14 +145,9 @@ final class Neo_Settings {
             'returnUrl' => add_query_arg('page', 'neo-authority-settings', admin_url('admin.php')),
             'state' => $state,
         ];
-        ?><form method="post" action="<?php echo esc_url(add_query_arg('page', 'neo-authority-settings', admin_url('admin.php'))); ?>">
-            <?php wp_nonce_field('nae_register_site'); ?>
-            <input type="hidden" name="nae_action" value="register_site">
+        ?><form method="post" action="<?php echo esc_url($package['url']); ?>">
             <input type="hidden" name="neo_connection_envelope" value="<?php echo esc_attr(wp_json_encode($envelope, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)); ?>">
             <?php submit_button('Connect NeoContent', 'primary', 'submit', false); ?>
         </form><?php
     }
-
-    private function authorize(string $nonce): void { if (!current_user_can('manage_options')) wp_die('Not allowed'); check_admin_referer($nonce); }
-    private function redirect(string $message): void { wp_safe_redirect(add_query_arg(['page' => 'neo-authority-settings', 'nae_message' => rawurlencode($message)], admin_url('admin.php'))); exit; }
 }
