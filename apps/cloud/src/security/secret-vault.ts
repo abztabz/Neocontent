@@ -1,12 +1,19 @@
 import crypto from "node:crypto";
 
 function encryptionKey(): Buffer {
-  const encoded = process.env.NEO_SECRET_ENCRYPTION_KEY ?? "";
-  const key = Buffer.from(encoded, "base64");
-  if (key.length !== 32) {
-    throw new Error("NEO_SECRET_ENCRYPTION_KEY must be a base64-encoded 32-byte key");
+  const secret = (process.env.NEO_SECRET_ENCRYPTION_KEY ?? "").trim();
+  if (secret.length < 32) {
+    throw new Error("NEO_SECRET_ENCRYPTION_KEY must be at least 32 characters");
   }
-  return key;
+
+  const base64UrlPattern = /^[A-Za-z0-9_-]+={0,2}$/;
+  if (base64UrlPattern.test(secret)) {
+    const normalized = secret.replace(/-/g, "+").replace(/_/g, "/");
+    const key = Buffer.from(normalized, "base64");
+    if (key.length === 32) return key;
+  }
+
+  return crypto.createHash("sha256").update(secret, "utf8").digest();
 }
 
 export function encryptSecret(value: string): string {
