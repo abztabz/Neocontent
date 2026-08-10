@@ -34,12 +34,42 @@ test("operator same-origin accepts Vercel production URL as a host candidate", (
   }
 });
 
+test("operator same-origin accepts an iOS same-origin form behind a mismatched proxy host", () => {
+  assert.doesNotThrow(() => assertSameOrigin({
+    method: "POST",
+    headers: {
+      origin: "https://living-content-engine.vercel.app",
+      referer: "https://living-content-engine.vercel.app/api/operator",
+      host: "internal-deployment.vercel.app",
+      "sec-fetch-site": "same-origin",
+    },
+    query: {},
+    body: {},
+  }));
+});
+
+test("operator same-origin rejects a fallback request with a mismatched referer", () => {
+  assert.throws(() => assertSameOrigin({
+    method: "POST",
+    headers: {
+      origin: "https://living-content-engine.vercel.app",
+      referer: "https://evil.test/operator",
+      host: "internal-deployment.vercel.app",
+      "sec-fetch-site": "same-origin",
+    },
+    query: {},
+    body: {},
+  }), /origin is invalid/i);
+});
+
 test("operator same-origin still rejects cross-origin requests", () => {
   assert.throws(() => assertSameOrigin({
     method: "POST",
     headers: {
       origin: "https://evil.test",
+      referer: "https://living-content-engine.vercel.app/api/operator",
       host: "living-content-engine.vercel.app",
+      "sec-fetch-site": "cross-site",
     },
     query: {},
     body: {},
