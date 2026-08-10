@@ -9,8 +9,66 @@ import { validateRegisterSiteInput } from "../../../src/sites/register-site.js";
 import { notifyOperatorSafely } from "../../../src/operator/push-notifications.js";
 import { activateWordPressSite, verifyWordPressConnectionProof } from "../../../src/sites/wordpress-connection.js";
 
+interface BrowserNavigationEnvelope {
+  schemaVersion: "neo-browser-navigation-v1";
+  payload: string;
+  siteId: string;
+  timestamp: string;
+  signature: string;
+  returnUrl: string;
+  state: string;
+}
+
+export function browserNavigationEnvelope(body: unknown): BrowserNavigationEnvelope | null {
+  let encoded = "";
+  if (body && typeof body === "object" && !Array.isArray(body)) {
+    const value = (body as Record<string, unknown>).neo_connection_envelope;
+    if (typeof value === "string") encoded = value;
+  } else if (typeof body === "string") {
+    encoded = new URLSearchParams(body).get("neo_connection_envelope") ?? "";
+  }
+  if (!encoded || encoded.length > 65_536) return null;
+  let value: unknown;
+  try { value = JSON.parse(encoded); } catch { throw new Error("Browser connection envelope is invalid"); }
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Browser connection envelope is invalid");
+  const item = value as Record<string, unknown>;
+  if (item.schemaVersion !== "neo-browser-navigation-v1"
+    || typeof item.payload !== "string" || item.payload.length < 2 || item.payload.length > 50_000
+    || typeof item.siteId !== "string" || !/^[0-9a-f-]{36}$/i.test(item.siteId)
+    || typeof item.timestamp !== "string" || !/^\d{10}$/.test(item.timestamp)
+    || typeof item.signature !== "string" || !/^[0-9a-f]{64}$/i.test(item.signature)
+    || typeof item.returnUrl !== "string" || item.returnUrl.length > 2_048
+    || typeof item.state !== "string" || !/^[A-Za-z0-9]{32,128}$/.test(item.state)) {
+    throw new Error("Browser connection envelope is invalid");
+  }
+  return item as unknown as BrowserNavigationEnvelope;
+}
+
+export function validatedReturnUrl(value: string, websiteUrl: string, callbackUrl: string): URL {
+  const target = new URL(value);
+  const website = new URL(websiteUrl);
+  const callback = new URL(callbackUrl);
+  const expectedPath = callback.pathname.replace(/wp-json\/neo-authority\/v1\/publish\/?$/, "wp-admin/admin.php");
+  if (target.protocol !== "https:" || target.origin !== website.origin
+    || target.pathname !== expectedPath || target.searchParams.get("page") !== "neo-authority-settings") {
+    throw new Error("Browser connection return URL is invalid");
+  }
+  target.search = "";
+  target.searchParams.set("page", "neo-authority-settings");
+  return target;
+}
+
+function redirectBrowser(response: VercelResponseLike, target: URL, state: string, result: "sent" | "error"): void {
+  target.searchParams.set("nae_connection", result);
+  target.searchParams.set("nae_state", state);
+  response.setHeader?.("location", target.toString());
+  response.setHeader?.("cache-control", "no-store");
+  response.status(303).send?.("");
+}
+
 function browserOrigin(request: VercelRequestLike): string {
-  const value = normalizedHeaders(request).origin ?? "";
+  const headers = normalizedHeaders(request);
+  const value = headers.origin ?? headers.referer ?? "";
   try {
     const url = new URL(value);
     return url.protocol === "https:" && !url.username && !url.password && (!url.port || url.port === "443")
@@ -47,10 +105,23 @@ export default async function handler(request: VercelRequestLike, response: Verc
     return;
   }
   if (request.method !== "POST") return response.status(405).json({ error: { code: "METHOD_NOT_ALLOWED", message: "POST required" } });
+  let navigation: BrowserNavigationEnvelope | null = null;
+  let returnTarget: URL | null = null;
   try {
-    const payload = (request.body ?? {}) as RegisterSiteInput;
-    const headers = normalizedHeaders(request);
+    navigation = browserNavigationEnvelope(request.body);
+    const payload = navigation
+      ? JSON.parse(navigation.payload) as RegisterSiteInput
+      : (request.body ?? {}) as RegisterSiteInput;
+    const headers = navigation ? {
+      "content-type": "application/json",
+      "x-neo-site-id": navigation.siteId,
+      "x-neo-timestamp": navigation.timestamp,
+      "x-neo-signature": navigation.signature,
+      "x-neo-connection-request": "1",
+      "x-neo-browser-connection": "1",
+    } : normalizedHeaders(request);
     const validated = validateRegisterSiteInput(payload);
+    if (navigation) returnTarget = validatedReturnUrl(navigation.returnUrl, validated.websiteUrl, validated.callbackUrl);
     assertBrowserConnectionOrigin(headers, origin, validated.websiteUrl);
     if (headers["x-neo-browser-connection"] === "1") {
       setCors(response, origin);
@@ -59,12 +130,15 @@ export default async function handler(request: VercelRequestLike, response: Verc
     const authorization = await authorizeRegistration(repository, {
       method: "POST",
       path: "/api/v1/sites/register",
-      body: rawBody(request),
+      body: navigation ? navigation.payload : rawBody(request),
       headers,
     }, payload);
     if (authorization.mode === "pending") {
       const pending = authorization.pendingConnection;
-      if (pending?.status === "rejected") return response.status(200).json({ status: "support_required" });
+      if (pending?.status === "rejected") {
+        if (navigation && returnTarget) return redirectBrowser(response, returnTarget, navigation.state, "error");
+        return response.status(200).json({ status: "support_required" });
+      }
       if (!pending) {
         if (await repository.countPendingSiteConnections() >= 100) throw new Error("Connection request rate limit reached");
         const sameWebsite = await repository.findPendingSiteConnectionByWebsite(validated.websiteUrl);
@@ -84,14 +158,17 @@ export default async function handler(request: VercelRequestLike, response: Verc
         });
         await notifyOperatorSafely(repository, "connection_requested", `connection-requested:${validated.siteId}`);
       }
+      if (navigation && returnTarget) return redirectBrowser(response, returnTarget, navigation.state, "sent");
       return response.status(202).json({ status: "pending" });
     }
     const result = await handleRegisterSite(payload);
     const site = await repository.findSiteByExternalId(validated.siteId);
     if (!site) throw new Error("Registered site was not found");
     await activateWordPressSite(site);
+    if (navigation && returnTarget) return redirectBrowser(response, returnTarget, navigation.state, "sent");
     response.status(result.status).json(result.body);
   } catch (error) {
+    if (navigation && returnTarget) return redirectBrowser(response, returnTarget, navigation.state, "error");
     sendError(response, error);
   }
 }
