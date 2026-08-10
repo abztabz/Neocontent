@@ -26,8 +26,20 @@ export function assertSameOrigin(request: VercelRequestLike): void {
     String(process.env.VERCEL_PROJECT_PRODUCTION_URL ?? ""),
     String(process.env.VERCEL_URL ?? ""),
   ].map((value) => value.trim().toLowerCase()).filter(Boolean);
-  if (!origin || hostCandidates.length === 0) throw new Error("Operator request origin is required");
+  if (!origin) throw new Error("Operator request origin is required");
+
   let parsed: URL;
   try { parsed = new URL(origin); } catch { throw new Error("Operator request origin is invalid"); }
-  if (parsed.protocol !== "https:" || !hostCandidates.includes(parsed.host.toLowerCase())) throw new Error("Operator request origin is invalid");
+  if (parsed.protocol !== "https:") throw new Error("Operator request origin is invalid");
+  if (hostCandidates.includes(parsed.host.toLowerCase())) return;
+
+  const fetchSite = String(request.headers["sec-fetch-site"] ?? "").toLowerCase();
+  const referer = String(request.headers.referer ?? "");
+  let refererMatches = false;
+  if (referer) {
+    try { refererMatches = new URL(referer).origin === parsed.origin; } catch { refererMatches = false; }
+  }
+  if (fetchSite === "same-origin" && refererMatches) return;
+
+  throw new Error("Operator request origin is invalid");
 }
