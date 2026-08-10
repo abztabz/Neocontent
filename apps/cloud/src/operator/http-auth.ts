@@ -20,10 +20,14 @@ export function assertOperatorCsrf(request: VercelRequestLike, body: Record<stri
 
 export function assertSameOrigin(request: VercelRequestLike): void {
   const origin = String(request.headers.origin ?? "");
-  const forwardedHost = String(request.headers["x-forwarded-host"] ?? request.headers.host ?? "").split(",")[0].trim();
-  const forwardedProto = String(request.headers["x-forwarded-proto"] ?? "https").split(",")[0].trim();
-  if (!origin || !forwardedHost) throw new Error("Operator request origin is required");
+  const hostCandidates = [
+    ...String(request.headers.host ?? "").split(","),
+    ...String(request.headers["x-forwarded-host"] ?? "").split(","),
+    String(process.env.VERCEL_PROJECT_PRODUCTION_URL ?? ""),
+    String(process.env.VERCEL_URL ?? ""),
+  ].map((value) => value.trim().toLowerCase()).filter(Boolean);
+  if (!origin || hostCandidates.length === 0) throw new Error("Operator request origin is required");
   let parsed: URL;
   try { parsed = new URL(origin); } catch { throw new Error("Operator request origin is invalid"); }
-  if (parsed.protocol !== `${forwardedProto}:` || parsed.host !== forwardedHost) throw new Error("Operator request origin is invalid");
+  if (parsed.protocol !== "https:" || !hostCandidates.includes(parsed.host.toLowerCase())) throw new Error("Operator request origin is invalid");
 }
