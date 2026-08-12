@@ -17,13 +17,14 @@ const draft = {
 test("accepts raw Luna JSON", () => {
   const parsed = parseDraftImport(JSON.stringify(draft));
   assert.equal(parsed.article.title, draft.title);
-  assert.deepEqual(parsed.payload, draft);
+  assert.equal(parsed.payload.schemaVersion, draft.schemaVersion);
+  assert.equal(parsed.article.imagePlan?.featured.altText, draft.title);
 });
 
 test("accepts a complete JSON markdown fence", () => {
   const parsed = parseDraftImport(`\uFEFF\n\`\`\`json\n${JSON.stringify(draft, null, 2)}\n\`\`\``);
   assert.equal(parsed.article.body, draft.bodyHtml);
-  assert.deepEqual(parsed.payload, draft);
+  assert.equal(parsed.payload.bodyHtml, draft.bodyHtml);
 });
 
 test("accepts short surrounding ChatGPT commentary", () => {
@@ -44,4 +45,11 @@ test("rejects malformed JSON with an operator-friendly message", () => {
 
 test("still rejects the wrong governed schema", () => {
   assert.throws(() => parseDraftImport(JSON.stringify({ ...draft, schemaVersion: "wrong" })), /schema is invalid/);
+});
+
+test("blocks long wall-of-text drafts without semantic sections", () => {
+  assert.throws(() => parseDraftImport(JSON.stringify({
+    ...draft,
+    bodyHtml: `<p>${"Unstructured copy ".repeat(80)}</p>`,
+  })), /two H2 sections/);
 });

@@ -144,6 +144,7 @@ final class Neo_Publisher {
         $excerpt_raw = (string)$request->get_param('excerpt');
         $rationale_raw = (string)$request->get_param('rationale');
         $sources_raw = $request->get_param('sources');
+        $image_plan_raw = $request->get_param('imagePlan');
         if ($title_raw === '' || strlen($title_raw) > 1000) return new WP_Error('nae_invalid_title', 'Article title is invalid.', ['status' => 400]);
         if ($body_raw === '' || strlen($body_raw) > 500000) return new WP_Error('nae_invalid_body', 'Article body is invalid.', ['status' => 400]);
         if (strlen($excerpt_raw) > 8000 || strlen($rationale_raw) > 20000) return new WP_Error('nae_invalid_metadata', 'Article metadata is too long.', ['status' => 400]);
@@ -159,6 +160,8 @@ final class Neo_Publisher {
                 'claimSupported' => sanitize_textarea_field((string)($source['claimSupported'] ?? '')),
             ];
         }, $sources_raw);
+        $image_plan = $this->sanitize_image_plan($image_plan_raw, $title_raw, $body_raw);
+        $formatted_body = $this->format_for_gutenberg($body_raw);
         $meta_input = [
             '_nae_idempotency_key' => $key,
             '_nae_rationale' => sanitize_textarea_field($rationale_raw),
@@ -168,6 +171,7 @@ final class Neo_Publisher {
             '_nae_seo_title' => substr(sanitize_text_field((string)$request->get_param('seoTitle')), 0, 1000),
             '_nae_meta_description' => substr(sanitize_textarea_field((string)$request->get_param('metaDescription')), 0, 2000),
             '_nae_focus_keyphrase' => substr(sanitize_text_field((string)$request->get_param('focusKeyphrase')), 0, 500),
+            '_nae_image_plan' => wp_json_encode($image_plan, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
         ];
         if (defined('WPSEO_VERSION')) {
             $meta_input['_yoast_wpseo_title'] = $meta_input['_nae_seo_title'];
@@ -194,7 +198,7 @@ final class Neo_Publisher {
             $updated = wp_update_post([
                 'ID' => $existing[0]->ID,
                 'post_title' => sanitize_text_field($title_raw),
-                'post_content' => wp_kses_post($body_raw),
+                'post_content' => $formatted_body,
                 'post_excerpt' => sanitize_textarea_field($excerpt_raw),
                 'meta_input' => $meta_input,
             ], true);
@@ -209,7 +213,7 @@ final class Neo_Publisher {
 
         $post_id = wp_insert_post([
             'post_title' => sanitize_text_field($title_raw),
-            'post_content' => wp_kses_post($body_raw),
+            'post_content' => $formatted_body,
             'post_excerpt' => sanitize_textarea_field($excerpt_raw),
             'post_status' => 'draft',
             'post_type' => 'post',
@@ -223,5 +227,62 @@ final class Neo_Publisher {
             'status' => get_post_status($post_id),
             'publishedAt' => current_time('c'),
         ], 201);
+    }
+
+    private function sanitize_image_plan($value, string $title, string $body): array {
+        $value = is_array($value) ? $value : [];
+        $featured = is_array($value['featured'] ?? null) ? $value['featured'] : [];
+        $inline = [];
+        foreach (array_slice(is_array($value['inline'] ?? null) ? $value['inline'] : [], 0, 3) as $image) {
+            if (!is_array($image)) continue;
+            $subject = substr(sanitize_text_field((string)($image['subject'] ?? '')), 0, 500);
+            if ($subject === '') continue;
+            $inline[] = [
+                'afterHeading' => substr(sanitize_text_field((string)($image['afterHeading'] ?? '')), 0, 300),
+                'subject' => $subject,
+                'altText' => substr(sanitize_text_field((string)($image['altText'] ?? '')), 0, 300),
+                'caption' => substr(sanitize_text_field((string)($image['caption'] ?? '')), 0, 500),
+            ];
+        }
+        if (!$inline && preg_match_all('/<h2(?:\s[^>]*)?>(.*?)<\/h2>/is', $body, $matches)) {
+            foreach (array_slice($matches[1], 0, 2) as $heading_html) {
+                $heading = substr(sanitize_text_field(wp_strip_all_tags((string)$heading_html)), 0, 300);
+                if ($heading !== '') $inline[] = [
+                    'afterHeading' => $heading,
+                    'subject' => 'Editorial supporting image for ' . $heading,
+                    'altText' => $heading,
+                    'caption' => '',
+                ];
+            }
+        }
+        return [
+            'featured' => [
+                'subject' => substr(sanitize_text_field((string)($featured['subject'] ?? ('Editorial banner image for ' . $title))), 0, 500),
+                'altText' => substr(sanitize_text_field((string)($featured['altText'] ?? $title)), 0, 300),
+                'caption' => substr(sanitize_text_field((string)($featured['caption'] ?? '')), 0, 500),
+            ],
+            'inline' => $inline,
+        ];
+    }
+
+    private function format_for_gutenberg(string $body): string {
+        $safe = wp_kses_post($body);
+        $safe = preg_replace('/<h1(\s[^>]*)?>/i', '<h2$1>', $safe);
+        $safe = preg_replace('/<\/h1>/i', '</h2>', (string)$safe);
+        if (str_contains((string)$safe, '<!-- wp:')) return (string)$safe;
+        return (string)preg_replace_callback(
+            '/<(p|h2|h3|ul|ol|blockquote|figure)(\s[^>]*)?>[\s\S]*?<\/\1>|<hr\s*\/?>/i',
+            static function(array $match): string {
+                $fragment = $match[0];
+                if (stripos($fragment, '<h3') === 0) return "<!-- wp:heading {\"level\":3} -->\n{$fragment}\n<!-- /wp:heading -->";
+                if (stripos($fragment, '<h2') === 0) return "<!-- wp:heading -->\n{$fragment}\n<!-- /wp:heading -->";
+                if (stripos($fragment, '<ul') === 0 || stripos($fragment, '<ol') === 0) return "<!-- wp:list -->\n{$fragment}\n<!-- /wp:list -->";
+                if (stripos($fragment, '<blockquote') === 0) return "<!-- wp:quote -->\n{$fragment}\n<!-- /wp:quote -->";
+                if (stripos($fragment, '<figure') === 0) return "<!-- wp:image -->\n{$fragment}\n<!-- /wp:image -->";
+                if (stripos($fragment, '<hr') === 0) return "<!-- wp:separator -->\n<hr class=\"wp-block-separator has-alpha-channel-opacity\"/>\n<!-- /wp:separator -->";
+                return "<!-- wp:paragraph -->\n{$fragment}\n<!-- /wp:paragraph -->";
+            },
+            (string)$safe
+        );
     }
 }

@@ -76,13 +76,14 @@ export async function runSite(
       industry: String(site.industry || "the industry"),
       audience: String(site.target_audience || "customers"),
       services: Array.isArray(site.services) ? site.services.map(String) : [],
+      locations: Array.isArray(site.locations) ? site.locations.map(String) : [],
       contentMode: String(site.content_mode || "balanced"),
       evidenceCount: customerEvidence.length,
       existingTitles,
     });
     const opportunity = selectOpportunity(opportunities);
 
-    const shouldResearch = opportunity.stream === "industry" || site.content_mode === "industry_authority";
+    const shouldResearch = ["industry", "timely_industry"].includes(opportunity.stream) || site.content_mode === "industry_authority";
     const liveEvidence = shouldResearch
       ? await researchIndustry({
           industry: String(site.industry || "the business industry"),
@@ -92,7 +93,7 @@ export async function runSite(
       : [];
 
     const evidence = buildEvidencePackage([...customerEvidence, ...liveEvidence]);
-    if ((opportunity.stream === "industry" || site.content_mode === "industry_authority") && !evidence.publishable) {
+    if ((["industry", "timely_industry"].includes(opportunity.stream) || site.content_mode === "industry_authority") && !evidence.publishable) {
       throw new Error(evidence.reasons.join(" ") || "Industry content requires verified evidence");
     }
 
@@ -106,7 +107,7 @@ export async function runSite(
 
     if (article.businessAlignmentScore < 80) throw new Error("Business alignment score is below the V1 threshold");
     if (article.verificationScore < 70) throw new Error("Model verification score is below the V1 threshold");
-    if ((opportunity.stream === "industry" || site.content_mode === "industry_authority") && article.sources.length === 0) {
+    if ((["industry", "timely_industry"].includes(opportunity.stream) || site.content_mode === "industry_authority") && article.sources.length === 0) {
       throw new Error("Industry authority articles require visible source records");
     }
 
