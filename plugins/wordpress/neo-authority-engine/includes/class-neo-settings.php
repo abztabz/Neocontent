@@ -9,13 +9,20 @@ final class Neo_Settings {
         $this->client = $client;
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_init', [$this, 'register']);
+        add_action('wp_ajax_nae_sync_settings', [$this, 'sync_settings']);
     }
 
     public function menu(): void {
         $settings = get_option(NAE_OPTION, []);
-        if (($settings['registered'] ?? '0') !== '1') {
-            add_submenu_page('neo-authority', 'Activate NeoContent', 'Activate', 'manage_options', 'neo-authority-settings', [$this, 'page']);
-        }
+        $active = ($settings['registered'] ?? '0') === '1';
+        add_submenu_page(
+            'neo-authority',
+            $active ? 'NeoContent Settings' : 'Activate NeoContent',
+            $active ? 'Settings' : 'Activate',
+            'manage_options',
+            'neo-authority-settings',
+            [$this, 'page']
+        );
     }
 
     public function register(): void {
@@ -95,7 +102,8 @@ final class Neo_Settings {
             'connection_status' => 'not_connected', 'connection_requested_at' => 0,
         ]);
         ?>
-        <div class="wrap"><h1>Activate NeoContent</h1>
+        <div class="wrap"><h1><?php echo $s['registered'] === '1' ? 'NeoContent Settings' : 'Activate NeoContent'; ?></h1>
+            <?php if ($s['registered'] === '1'): ?><p>Update the customer-facing profile, article style, and research cadence used by NeoContent.</p><?php endif; ?>
             <?php if (!empty($_GET['nae_message'])): ?><div class="notice notice-info"><p><?php echo esc_html(wp_unslash($_GET['nae_message'])); ?></p></div><?php endif; ?>
             <?php if (($_GET['nae_connection'] ?? '') === 'sent'): ?><div class="notice notice-success"><p>NeoContent received the connection request. Secure operator approval is pending.</p></div><?php endif; ?>
             <?php if (($_GET['nae_connection'] ?? '') === 'error'): ?><div class="notice notice-error"><p>NeoContent could not complete the connection request. Please press Connect NeoContent to retry.</p></div><?php endif; ?>
@@ -112,6 +120,19 @@ final class Neo_Settings {
                     <tr><th>Cadence</th><td><select name="<?php echo NAE_OPTION; ?>[cadence]"><option value="daily" <?php selected($s['cadence'], 'daily'); ?>>Daily</option><option value="weekly" <?php selected($s['cadence'], 'weekly'); ?>>Weekly</option><option value="biweekly" <?php selected($s['cadence'], 'biweekly'); ?>>Every two weeks</option><option value="monthly" <?php selected($s['cadence'], 'monthly'); ?>>Monthly</option></select></td></tr>
                 </table><?php submit_button('Save settings'); ?>
             </form>
+            <?php if ($s['registered'] === '1' && !empty($_GET['settings-updated'])): ?>
+                <p id="nae-settings-sync">Saving these settings to NeoContent…</p>
+                <script>
+                document.addEventListener('DOMContentLoaded', function () {
+                    const status = document.getElementById('nae-settings-sync');
+                    const data = new URLSearchParams({action: 'nae_sync_settings', _ajax_nonce: <?php echo wp_json_encode(wp_create_nonce('nae_sync_settings')); ?>});
+                    fetch(ajaxurl, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: data.toString()})
+                        .then((response) => response.json())
+                        .then((result) => { status.textContent = result.success ? 'Settings saved and synchronized.' : 'Settings were saved locally. NeoContent will retry synchronization when the connection is available.'; })
+                        .catch(() => { status.textContent = 'Settings were saved locally. NeoContent will retry synchronization when the connection is available.'; });
+                });
+                </script>
+            <?php endif; ?>
             <?php
             $connecting = in_array(($s['connection_status'] ?? ''), ['browser_pending', 'pending'], true);
             $status = $s['registered'] === '1' ? 'Active' : ($connecting ? 'Connecting' : (($s['connection_status'] ?? '') === 'support_required' ? 'Needs assistance' : 'Not connected'));
@@ -120,6 +141,26 @@ final class Neo_Settings {
             <?php if ($s['registered'] !== '1' && !$connecting) $this->render_connect_form($s); ?>
             <?php if ($s['registered'] !== '1' && $connecting): ?><p>Connection request sent. Waiting for secure operator approval.</p><?php endif; ?>
         </div><?php
+    }
+
+    public function sync_settings(): void {
+        if (!current_user_can('manage_options')) wp_send_json_error(['message' => 'Not allowed'], 403);
+        check_ajax_referer('nae_sync_settings');
+        $s = get_option(NAE_OPTION, []);
+        if (!is_array($s) || ($s['registered'] ?? '0') !== '1') wp_send_json_error(['message' => 'NeoContent is not active'], 409);
+        $result = $this->client->sync_settings([
+            'businessName' => (string)($s['business_name'] ?? get_bloginfo('name')),
+            'businessDescription' => (string)($s['business_description'] ?? ''),
+            'industry' => (string)($s['industry'] ?? ''),
+            'targetAudience' => (string)($s['target_audience'] ?? ''),
+            'tone' => (string)($s['tone'] ?? ''),
+            'services' => array_values(array_filter(array_map('trim', explode(',', (string)($s['services'] ?? ''))))),
+            'locations' => array_values(array_filter(array_map('trim', explode(',', (string)($s['locations'] ?? ''))))),
+            'contentMode' => (string)($s['content_mode'] ?? 'balanced'),
+            'cadence' => (string)($s['cadence'] ?? 'weekly'),
+        ]);
+        if (is_wp_error($result)) wp_send_json_error(['message' => 'Synchronization unavailable'], 502);
+        wp_send_json_success(['message' => 'Settings synchronized']);
     }
 
     private function render_connect_form(array $s): void {

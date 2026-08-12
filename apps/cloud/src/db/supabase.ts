@@ -55,6 +55,14 @@ export class SupabaseRepository {
     return this.request<Record<string, unknown>[]>(`sites?${query.toString()}`);
   }
 
+  async listDueOperatorManagedSites(limit = 20) {
+    const query = new URLSearchParams({
+      select: "*", enabled: "eq.true", workflow_mode: "eq.operator_managed", next_run_at: `lte.${new Date().toISOString()}`,
+      order: "next_run_at.asc", limit: String(Math.min(Math.max(limit, 1), 20)),
+    });
+    return this.request<Record<string, unknown>[]>(`sites?${query.toString()}`);
+  }
+
   async createOrganization(name: string) {
     const rows = await this.request<Record<string, unknown>[]>("organizations", { method: "POST", body: JSON.stringify({ name }) });
     return rows[0];

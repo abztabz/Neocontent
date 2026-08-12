@@ -121,6 +121,7 @@ export async function publishToWordPress(input: {
     seoTitle: input.article.seoTitle ?? "",
     metaDescription: input.article.metaDescription ?? "",
     focusKeyphrase: input.article.focusKeyphrase ?? "",
+    imagePlan: input.article.imagePlan ?? null,
     idempotencyKey: input.idempotencyKey,
   });
   const timestamp = String(Math.floor(Date.now() / 1000));

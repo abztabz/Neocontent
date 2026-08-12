@@ -58,7 +58,9 @@ Do not expose Production secrets to Preview deployments. Use a separate Supabase
 
 ## 4. WordPress
 
-Download the `neo-authority-engine-wordpress-v1.5.2` artifact from the latest successful CI run and upload the ZIP under **Plugins → Add New → Upload Plugin**. Website owners connect with one button; no license or enrollment key is shown. The Connect form posts directly from the browser to NeoContent, bypassing the customer host's constrained WordPress POST handling. NeoContent sends a purpose-separated signed callback that marks the plugin pending. WordPress performs no activation-time outbound request and runs no NeoContent polling cron. New sites remain pending until approved in the private operator dashboard, after which the cloud sends a separate signed activation callback to WordPress.
+Download the `neo-authority-engine-wordpress-v1.6.0` artifact from the latest successful CI run and upload the ZIP under **Plugins → Add New → Upload Plugin**. Website owners connect with one button; no license or enrollment key is shown. The Connect form posts directly from the browser to NeoContent, bypassing the customer host's constrained WordPress POST handling. NeoContent sends a purpose-separated signed callback that marks the plugin pending. WordPress performs no activation-time outbound request and runs no NeoContent polling cron. New sites remain pending until approved in the private operator dashboard, after which the cloud sends a separate signed activation callback to WordPress.
+
+In the free operator-managed workflow, the Vercel scheduler creates the next private brief when `next_run_at` is due and no article is already in progress. The customer's selected cadence is therefore cloud-owned; customer WordPress servers never run recurring NeoContent research or outbound polling. Operator-managed keyword fields are explicitly research hypotheses unless verified first-party performance data is supplied.
 
 During activation:
 

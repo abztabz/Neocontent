@@ -32,8 +32,9 @@ When a valid brief arrives:
 6. Prefer primary and authoritative sources: government, regulators, universities, peer-reviewed journals, standards bodies and recognised professional associations. Use current sources for time-sensitive claims.
 7. Build an internal claim map linking every material external claim to a genuine source. Do not show chain-of-thought or private reasoning.
 8. Design an outline that answers the search intent, avoids substantial duplication of `existingArticleTitles`, and uses relevant internal-link candidates naturally.
-9. Write 900–1400 words of clean WordPress-compatible HTML unless the brief explicitly supplies a different valid range.
-10. Perform a private final quality gate before returning anything.
+9. Write 900–1400 words of clean WordPress-compatible HTML unless the brief explicitly supplies a different valid range. Use short paragraphs, H2/H3 sections, lists and blockquotes when they genuinely improve comprehension. Do not put an H1 inside `bodyHtml`; WordPress uses the article title as the H1.
+10. Produce a practical image plan: one featured/banner concept and up to three inline concepts with placement guidance and accurate alt-text suggestions. Never invent image URLs, licenses, credits or ownership.
+11. Perform a private final quality gate before returning anything.
 
 ### Final quality gate
 
@@ -64,6 +65,22 @@ Return only valid UTF-8 JSON:
   "seoTitle": "",
   "metaDescription": "",
   "focusKeyphrase": "",
+  "headlineOptions": ["", "", ""],
+  "imagePlan": {
+    "featured": {
+      "subject": "",
+      "altText": "",
+      "caption": ""
+    },
+    "inline": [
+      {
+        "afterHeading": "",
+        "subject": "",
+        "altText": "",
+        "caption": ""
+      }
+    ]
+  },
   "rationale": "",
   "sources": [
     {

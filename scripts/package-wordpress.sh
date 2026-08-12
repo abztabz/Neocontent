@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE="$ROOT/plugins/wordpress/neo-authority-engine"
-OUTPUT="$ROOT/dist/neo-authority-engine-v1.5.2.zip"
+OUTPUT="$ROOT/dist/neo-authority-engine-v1.6.0.zip"
 STAGING="$(mktemp -d)"
 trap 'rm -rf "$STAGING"' EXIT
 

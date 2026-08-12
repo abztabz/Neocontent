@@ -177,6 +177,15 @@ final class Neo_Cloud_Client {
         );
     }
 
+    public function sync_settings(array $profile) {
+        $settings = $this->settings();
+        return $this->request(
+            'POST',
+            '/api/v1/sites/' . rawurlencode($settings['site_id']) . '/content-jobs',
+            ['action' => 'settings', 'profile' => $profile]
+        );
+    }
+
     public function review_content_job(string $job_id, string $decision, string $feedback = '') {
         $settings = $this->settings();
         return $this->request(

@@ -18,19 +18,28 @@ final class Neo_Customer_Dashboard {
         add_submenu_page('neo-authority', 'Drafts', 'Drafts', 'manage_options', 'neo-authority-drafts', [$this, 'drafts']);
     }
 
-    private function jobs(): array {
+    private function program(): array {
         $cached = get_transient('nae_customer_jobs');
-        if (is_array($cached)) return $cached;
+        if (is_array($cached) && isset($cached['jobs']) && is_array($cached['jobs'])) return $cached;
         $result = $this->client->list_content_jobs();
-        if (is_wp_error($result)) return [];
-        $jobs = is_array($result['jobs'] ?? null) ? $result['jobs'] : [];
-        set_transient('nae_customer_jobs', $jobs, MINUTE_IN_SECONDS);
-        return $jobs;
+        if (is_wp_error($result)) return ['jobs' => [], 'nextResearchAt' => null, 'cadence' => ''];
+        $program = [
+            'jobs' => is_array($result['jobs'] ?? null) ? $result['jobs'] : [],
+            'nextResearchAt' => sanitize_text_field((string)($result['nextResearchAt'] ?? '')),
+            'cadence' => sanitize_key((string)($result['cadence'] ?? '')),
+        ];
+        set_transient('nae_customer_jobs', $program, MINUTE_IN_SECONDS);
+        return $program;
+    }
+
+    private function jobs(): array {
+        return $this->program()['jobs'];
     }
 
     public function researching(): void {
         if (!current_user_can('manage_options')) return;
-        $jobs = array_values(array_filter($this->jobs(), static fn($job) => in_array(
+        $program = $this->program();
+        $jobs = array_values(array_filter($program['jobs'], static fn($job) => in_array(
             (string)($job['status'] ?? ''),
             ['researching', 'brief_ready', 'draft_ready', 'changes_requested'],
             true
@@ -38,6 +47,9 @@ final class Neo_Customer_Dashboard {
         ?>
         <div class="wrap"><h1>Researching</h1>
             <p>NeoContent is researching and preparing the next articles for your website.</p>
+            <?php if (!empty($program['nextResearchAt'])): ?>
+                <p><strong>Next research scheduled:</strong> <?php echo esc_html(wp_date(get_option('date_format') . ' ' . get_option('time_format'), strtotime((string)$program['nextResearchAt']))); ?><?php if (!empty($program['cadence'])): ?> · <?php echo esc_html(ucfirst((string)$program['cadence'])); ?> cadence<?php endif; ?></p>
+            <?php endif; ?>
             <?php if (!$jobs): ?><div class="notice notice-info inline"><p>No articles are currently being researched.</p></div><?php endif; ?>
             <div style="max-width:1000px">
                 <?php foreach ($jobs as $job): ?>
@@ -130,11 +142,16 @@ final class Neo_Customer_Dashboard {
         }
         $sources = json_decode((string)get_post_meta($post->ID, '_nae_sources', true), true);
         if (!is_array($sources)) $sources = [];
+        $image_plan = json_decode((string)get_post_meta($post->ID, '_nae_image_plan', true), true);
+        if (!is_array($image_plan)) $image_plan = [];
         ?>
         <p><strong>SEO title</strong><br><?php echo esc_html((string)get_post_meta($post->ID, '_nae_seo_title', true)); ?></p>
         <p><strong>Meta description</strong><br><?php echo esc_html((string)get_post_meta($post->ID, '_nae_meta_description', true)); ?></p>
         <p><strong>Focus keyphrase</strong><br><?php echo esc_html((string)get_post_meta($post->ID, '_nae_focus_keyphrase', true)); ?></p>
         <p><strong>Why this article was selected</strong><br><?php echo esc_html((string)get_post_meta($post->ID, '_nae_rationale', true)); ?></p>
+        <p><strong>Image plan</strong></p>
+        <?php if (!empty($image_plan['featured']['subject'])): ?><p><em>Featured/banner image:</em> <?php echo esc_html((string)$image_plan['featured']['subject']); ?><br><small>Alt text: <?php echo esc_html((string)($image_plan['featured']['altText'] ?? '')); ?></small></p><?php endif; ?>
+        <?php if (!empty($image_plan['inline']) && is_array($image_plan['inline'])): ?><ul><?php foreach ($image_plan['inline'] as $image): if (!is_array($image)) continue; ?><li><strong>After “<?php echo esc_html((string)($image['afterHeading'] ?? 'section')); ?>”:</strong> <?php echo esc_html((string)($image['subject'] ?? '')); ?><?php if (!empty($image['altText'])): ?><br><small>Alt text: <?php echo esc_html((string)$image['altText']); ?></small><?php endif; ?></li><?php endforeach; ?></ul><?php endif; ?>
         <p><strong>Evidence sources</strong></p><ul>
         <?php foreach ($sources as $source):
             if (!is_array($source)) continue;

@@ -87,6 +87,25 @@ test("scheduled paid-model runs select only cloud-api sites", async () => {
   }
 });
 
+test("scheduled free-workflow research selects only due operator-managed sites", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = "";
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    requestedUrl = String(input);
+    return new Response("[]", { status: 200 });
+  }) as typeof fetch;
+  try {
+    const repository = new SupabaseRepository({ url: "https://example.supabase.co", serviceRoleKey: "test-key" });
+    await repository.listDueOperatorManagedSites();
+    const url = new URL(requestedUrl);
+    assert.equal(url.searchParams.get("workflow_mode"), "eq.operator_managed");
+    assert.equal(url.searchParams.get("enabled"), "eq.true");
+    assert.match(url.searchParams.get("next_run_at") ?? "", /^lte\./);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("customer content reviews are scoped to both job and authenticated site", async () => {
   const originalFetch = globalThis.fetch;
   let requestedUrl = "";
