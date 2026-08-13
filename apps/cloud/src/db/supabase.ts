@@ -63,6 +63,64 @@ export class SupabaseRepository {
     return this.request<Record<string, unknown>[]>(`sites?${query.toString()}`);
   }
 
+  async listSitesDueContentLearning(limit = 5) {
+    const now = new Date().toISOString();
+    const query = new URLSearchParams({
+      select: "*",
+      enabled: "eq.true",
+      workflow_mode: "eq.operator_managed",
+      or: `(content_learning_status.in.(not_started,learning,failed,upgrade_required),content_learning_next_sync_at.lte.${now})`,
+      order: "updated_at.asc",
+      limit: String(Math.min(Math.max(limit, 1), 10)),
+    });
+    return this.request<Record<string, unknown>[]>(`sites?${query.toString()}`);
+  }
+
+  async findActiveContentSyncRun(siteId: string) {
+    const query = new URLSearchParams({ select: "*", site_id: `eq.${siteId}`, status: "in.(pending,running)", order: "created_at.desc", limit: "1" });
+    const rows = await this.request<Record<string, unknown>[]>(`site_content_sync_runs?${query.toString()}`);
+    return rows[0] ?? null;
+  }
+
+  async insertContentSyncRun(input: Record<string, unknown>) {
+    const rows = await this.request<Record<string, unknown>[]>("site_content_sync_runs", { method: "POST", body: JSON.stringify(input) });
+    return rows[0] ?? null;
+  }
+
+  async updateContentSyncRun(id: string, patch: Record<string, unknown>) {
+    const rows = await this.request<Record<string, unknown>[]>(`site_content_sync_runs?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH", body: JSON.stringify({ ...patch, updated_at: new Date().toISOString() }),
+    });
+    return rows[0] ?? null;
+  }
+
+  async upsertSiteContentItems(items: Record<string, unknown>[]) {
+    if (!items.length) return [];
+    return this.request<Record<string, unknown>[]>("site_content_items?on_conflict=site_id,external_content_id", {
+      method: "POST",
+      headers: { prefer: "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify(items),
+    });
+  }
+
+  async markSiteContentSnapshotCurrent(siteId: string, snapshotId: string) {
+    await this.request<Record<string, unknown>[]>(
+      `site_content_items?site_id=eq.${encodeURIComponent(siteId)}&last_seen_snapshot_id=neq.${encodeURIComponent(snapshotId)}`,
+      { method: "PATCH", body: JSON.stringify({ is_current: false, updated_at: new Date().toISOString() }) },
+    );
+  }
+
+  async listSiteContentItems(siteId: string, limit = 500) {
+    const query = new URLSearchParams({
+      select: "external_content_id,content_type,subtype,url,title,excerpt,content_text,voice_eligible,published_at,modified_at,metadata",
+      site_id: `eq.${siteId}`,
+      is_current: "eq.true",
+      order: "modified_at.desc.nullslast",
+      limit: String(Math.min(Math.max(limit, 1), 1000)),
+    });
+    return this.request<Record<string, unknown>[]>(`site_content_items?${query.toString()}`);
+  }
+
   async createOrganization(name: string) {
     const rows = await this.request<Record<string, unknown>[]>("organizations", { method: "POST", body: JSON.stringify({ name }) });
     return rows[0];

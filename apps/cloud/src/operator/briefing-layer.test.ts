@@ -13,6 +13,10 @@ test("creates a governed customer-specific Luna brief", () => {
         { title: "Unrelated", content: "An unrelated page", sourceUrl: "https://customer.example/other" },
       ],
       existingArticleTitles: ["Understanding autism support"],
+      websiteContent: [{
+        title: "Our editorial guide", excerpt: "A calm, practical customer-authored sample.",
+        url: "https://customer.example/guide", contentType: "post", voiceEligible: true,
+      }],
     },
     approvedSources: [{
       status: "approved", label: "State guidance", url: "https://az.gov/example", publisher: "Arizona",
@@ -24,4 +28,6 @@ test("creates a governed customer-specific Luna brief", () => {
   assert.equal((brief.customerProvidedSources as unknown[]).length, 1);
   assert.equal(((brief.customerProvidedSources as Record<string, unknown>[])[0]).researchUsage, "approved_as_evidence_for_listed_claims");
   assert.doesNotMatch(JSON.stringify(brief), /unsafe\.example/);
+  assert.equal((((brief.brandVoiceEvidence as Record<string, unknown>).samples as unknown[]).length), 1);
+  assert.equal((((brief.customerWebsiteEvidence as Record<string, unknown>).items as unknown[]).length), 1);
 });

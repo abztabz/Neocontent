@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE="$ROOT/plugins/wordpress/neo-authority-engine"
-OUTPUT="$ROOT/dist/neo-authority-engine-v1.6.0.zip"
+OUTPUT="$ROOT/dist/neo-authority-engine-v1.7.0.zip"
 STAGING="$(mktemp -d)"
 trap 'rm -rf "$STAGING"' EXIT
 
@@ -22,6 +22,7 @@ for file in \
   class-neo-cloud-client.php \
   class-neo-settings.php \
   class-neo-publisher.php \
+  class-neo-content-inventory.php \
   class-neo-customer-dashboard.php; do
   install -m 0644 "$SOURCE/includes/$file" "$STAGING/neo-authority-engine/includes/$file"
 done

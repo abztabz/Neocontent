@@ -42,6 +42,11 @@ export async function handleCustomerContentJobs(
         jobs,
         cadence: String(site.cadence ?? "weekly"),
         nextResearchAt: site.next_run_at ?? null,
+        websiteLearning: {
+          status: String(site.content_learning_status ?? "not_started"),
+          itemCount: Number(site.content_item_count ?? 0),
+          completedAt: site.content_learning_completed_at ?? null,
+        },
       },
     };
   }

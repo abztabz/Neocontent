@@ -11,6 +11,7 @@ type OperatorProgramRepository = Pick<SupabaseRepository,
   | "listApprovedSources"
   | "listCustomerContentJobs"
   | "listRecentArticles"
+  | "listSiteContentItems"
   | "updateSite"
 >;
 
@@ -43,17 +44,23 @@ async function createProgramJob(
   const existing = await repository.findOperatorContentJobByIdempotencyKey(siteId, idempotencyKey);
   if (existing) return existing;
 
-  const [knowledge, sources, recentArticles, priorJobs] = await Promise.all([
+  if (String(site.content_learning_status ?? "not_started") !== "completed") {
+    return { status: "deferred", reason: "Website learning must complete before research" };
+  }
+
+  const [knowledge, sources, recentArticles, priorJobs, websiteContent] = await Promise.all([
     repository.listApprovedKnowledge(siteId),
     repository.listApprovedSources(siteId),
     repository.listRecentArticles(siteId),
     repository.listCustomerContentJobs(siteId, 100),
+    repository.listSiteContentItems(siteId, 1000),
   ]);
   const services = list(site.services);
   const locations = list(site.locations);
   const existingTitles = [
     ...recentArticles.map((article) => String(article.title ?? "")),
     ...priorJobs.map((job) => String(job.topic ?? "")),
+    ...websiteContent.map((item) => String(item.title ?? "")),
   ].filter(Boolean);
   const opportunities = generateOpportunities({
     businessName: String(site.business_name || "the business"),
@@ -89,6 +96,16 @@ async function createProgramJob(
         content: String(item.content ?? ""),
         sourceUrl: String(item.source_url ?? ""),
         sourceType: String(item.source_type ?? "website"),
+      })),
+      websiteContent: websiteContent.map((item) => ({
+        title: String(item.title ?? ""),
+        excerpt: String(item.excerpt ?? ""),
+        content: String(item.content_text ?? ""),
+        url: String(item.url ?? ""),
+        contentType: String(item.content_type ?? ""),
+        voiceEligible: item.voice_eligible === true,
+        modifiedAt: item.modified_at ?? null,
+        metadata: item.metadata ?? {},
       })),
       existingArticleTitles: existingTitles,
     },
@@ -132,6 +149,9 @@ export async function createScheduledOperatorContentJob(
 ) {
   const siteId = String(site.id ?? "");
   if (!siteId) throw new Error("Scheduled site identifier is missing");
+  if (String(site.content_learning_status ?? "not_started") !== "completed") {
+    return { status: "deferred", reason: "Website learning must complete before research" };
+  }
   const jobs = await repository.listCustomerContentJobs(siteId, 100);
   if (jobs.some((job) => activeStatuses.has(String(job.status ?? "")))) {
     return { status: "deferred", reason: "An article is already in progress" };
@@ -139,4 +159,3 @@ export async function createScheduledOperatorContentJob(
   const scheduledFor = String(site.next_run_at || new Date().toISOString());
   return createProgramJob(repository, site, `cadence:${scheduledFor}`, "scheduled_cadence");
 }
-

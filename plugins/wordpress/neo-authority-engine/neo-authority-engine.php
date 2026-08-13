@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Neo Authority Engine
  * Description: Governed business knowledge, trusted sources, and evidence-backed blog automation.
- * Version: 1.6.0
+ * Version: 1.7.0
  * Author: 108 Media
  * Requires at least: 6.2
  * Requires PHP: 8.0
@@ -10,13 +10,14 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('NAE_VERSION', '1.6.0');
+define('NAE_VERSION', '1.7.0');
 define('NAE_OPTION', 'nae_v1_settings');
 
 require_once __DIR__ . '/includes/class-neo-secret-store.php';
 require_once __DIR__ . '/includes/class-neo-cloud-client.php';
 require_once __DIR__ . '/includes/class-neo-settings.php';
 require_once __DIR__ . '/includes/class-neo-publisher.php';
+require_once __DIR__ . '/includes/class-neo-content-inventory.php';
 require_once __DIR__ . '/includes/class-neo-customer-dashboard.php';
 
 final class Neo_Authority_Engine_V1 {
@@ -30,6 +31,7 @@ final class Neo_Authority_Engine_V1 {
         new Neo_Customer_Dashboard($client);
         new Neo_Settings($client);
         new Neo_Publisher();
+        new Neo_Content_Inventory();
         add_action('rest_api_init', [$this, 'register_status_route']);
     }
 
