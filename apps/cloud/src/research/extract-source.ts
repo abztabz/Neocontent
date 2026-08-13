@@ -70,7 +70,7 @@ function stripHtml(html: string): string {
   ).slice(0, MAX_EXTRACTED_CHARS);
 }
 
-function detectPromptInjection(text: string): string[] {
+export function detectPromptInjection(text: string): string[] {
   const warnings: string[] = [];
   const patterns: Array<[RegExp, string]> = [
     [/ignore (all|any|the) previous instructions/i, "possible prompt-injection instruction"],

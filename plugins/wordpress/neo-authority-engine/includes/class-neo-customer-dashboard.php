@@ -22,11 +22,16 @@ final class Neo_Customer_Dashboard {
         $cached = get_transient('nae_customer_jobs');
         if (is_array($cached) && isset($cached['jobs']) && is_array($cached['jobs'])) return $cached;
         $result = $this->client->list_content_jobs();
-        if (is_wp_error($result)) return ['jobs' => [], 'nextResearchAt' => null, 'cadence' => ''];
+        if (is_wp_error($result)) return ['jobs' => [], 'nextResearchAt' => null, 'cadence' => '', 'websiteLearning' => ['status' => 'unavailable', 'itemCount' => 0]];
         $program = [
             'jobs' => is_array($result['jobs'] ?? null) ? $result['jobs'] : [],
             'nextResearchAt' => sanitize_text_field((string)($result['nextResearchAt'] ?? '')),
             'cadence' => sanitize_key((string)($result['cadence'] ?? '')),
+            'websiteLearning' => [
+                'status' => sanitize_key((string)($result['websiteLearning']['status'] ?? 'not_started')),
+                'itemCount' => absint($result['websiteLearning']['itemCount'] ?? 0),
+                'completedAt' => sanitize_text_field((string)($result['websiteLearning']['completedAt'] ?? '')),
+            ],
         ];
         set_transient('nae_customer_jobs', $program, MINUTE_IN_SECONDS);
         return $program;
@@ -47,6 +52,12 @@ final class Neo_Customer_Dashboard {
         ?>
         <div class="wrap"><h1>Researching</h1>
             <p>NeoContent is researching and preparing the next articles for your website.</p>
+            <?php $learning = is_array($program['websiteLearning'] ?? null) ? $program['websiteLearning'] : []; ?>
+            <?php if (($learning['status'] ?? '') !== 'completed'): ?>
+                <div class="notice notice-info inline"><p><strong>Learning your website</strong><br>NeoContent is securely reviewing your published pages, posts, public media and navigation before it selects the first topic.<?php if (!empty($learning['itemCount'])): ?> <?php echo esc_html((string)$learning['itemCount']); ?> public items learned so far.<?php endif; ?></p></div>
+            <?php else: ?>
+                <p><strong>Website understanding:</strong> <?php echo esc_html((string)($learning['itemCount'] ?? 0)); ?> public items learned.</p>
+            <?php endif; ?>
             <?php if (!empty($program['nextResearchAt'])): ?>
                 <p><strong>Next research scheduled:</strong> <?php echo esc_html(wp_date(get_option('date_format') . ' ' . get_option('time_format'), strtotime((string)$program['nextResearchAt']))); ?><?php if (!empty($program['cadence'])): ?> · <?php echo esc_html(ucfirst((string)$program['cadence'])); ?> cadence<?php endif; ?></p>
             <?php endif; ?>

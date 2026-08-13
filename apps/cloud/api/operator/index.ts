@@ -10,6 +10,7 @@ import { parseDraftImport } from "../../src/operator/draft-import.js";
 import { decryptSecret } from "../../src/security/secret-vault.js";
 import { registerSite, type RegisterSiteInput } from "../../src/sites/register-site.js";
 import { activateWordPressSite } from "../../src/sites/wordpress-connection.js";
+import { processSiteContentLearning } from "../../src/sites/site-content-learning.js";
 
 function html(value: unknown): string {
   return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[character] ?? character);
@@ -114,8 +115,13 @@ export default async function handler(request: VercelRequestLike, response: Verc
         if (!site) throw new Error("Registered site was not returned");
         connectionStage = "activate-wordpress";
         await activateWordPressSite(site);
-        connectionStage = "create-initial-research";
-        await createInitialOperatorContentJob(repository, site);
+        connectionStage = "learn-public-website";
+        const learning = await processSiteContentLearning(repository, site, 4);
+        if (learning.status === "completed") {
+          connectionStage = "create-initial-research";
+          const learnedSite = await repository.findSiteByExternalId(String(site.external_site_id));
+          await createInitialOperatorContentJob(repository, learnedSite ?? site);
+        }
         connectionStage = "mark-approved";
         await repository.updatePendingSiteConnection(connectionId, { status: "approved", reviewed_at: new Date().toISOString() });
       } else {

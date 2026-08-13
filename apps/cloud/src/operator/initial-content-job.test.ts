@@ -19,6 +19,7 @@ test("creates one governed first brief when a site is connected", async () => {
     listApprovedSources: async () => [],
     listRecentArticles: async () => [],
     listCustomerContentJobs: async () => insertedJobs,
+    listSiteContentItems: async () => [{ title: "Existing website post", excerpt: "Editorial sample", content_text: "Editorial sample", url: "https://example.com/post", content_type: "post", voice_eligible: true }],
     updateSite: async () => ({}),
     insertOperatorContentJob: async (input: Record<string, unknown>) => {
       const job = { id: "11111111-1111-4111-8111-111111111111", ...input };
@@ -40,6 +41,7 @@ test("creates one governed first brief when a site is connected", async () => {
     locations: ["Nepal"],
     tone: "Entertaining and professional",
     content_mode: "balanced",
+    content_learning_status: "completed",
   };
 
   const first = await createInitialOperatorContentJob(repository as never, site);
@@ -57,7 +59,7 @@ test("defers scheduled research while an article still requires action", async (
   const repository = {
     listCustomerContentJobs: async () => [{ id: "job-a", status: "brief_ready" }],
   };
-  const result = await createScheduledOperatorContentJob(repository as never, { id: "site-a" });
+  const result = await createScheduledOperatorContentJob(repository as never, { id: "site-a", content_learning_status: "completed" });
   assert.deepEqual(result, { status: "deferred", reason: "An article is already in progress" });
 });
 
@@ -69,6 +71,7 @@ test("creates the next brief after the previous article is completed", async () 
     listApprovedSources: async () => [],
     listRecentArticles: async () => [{ title: "Existing completed article" }],
     listCustomerContentJobs: async () => insertedJobs.length > 0 ? insertedJobs : [{ id: "old-job", status: "completed", topic: "Existing completed article" }],
+    listSiteContentItems: async () => [],
     updateSite: async () => ({}),
     insertOperatorContentJob: async (input: Record<string, unknown>) => {
       const job = { id: "scheduled-job", ...input };
@@ -89,6 +92,7 @@ test("creates the next brief after the previous article is completed", async () 
     locations: ["Nepal"],
     cadence: "weekly",
     next_run_at: "2026-08-12T00:00:00.000Z",
+    content_learning_status: "completed",
   };
 
   const result = await createScheduledOperatorContentJob(repository as never, site);
@@ -96,4 +100,13 @@ test("creates the next brief after the previous article is completed", async () 
   assert.equal(result.id, "scheduled-job");
   assert.equal(insertedJobs[0].idempotency_key, "cadence:2026-08-12T00:00:00.000Z");
   assert.equal(insertedJobs[0].status, "brief_ready");
+});
+
+test("defers all topic generation until website learning completes", async () => {
+  const repository = { listCustomerContentJobs: async () => [] };
+  const result = await createScheduledOperatorContentJob(repository as never, {
+    id: "site-a",
+    content_learning_status: "learning",
+  });
+  assert.deepEqual(result, { status: "deferred", reason: "Website learning must complete before research" });
 });

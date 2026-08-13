@@ -78,3 +78,10 @@ test("separates pending and activation callbacks", () => {
   const activation = signRequest({ secret, purpose: "cloud-activation", ...input });
   assert.notEqual(pending, activation);
 });
+
+test("separates inventory pulls from publishing callbacks", () => {
+  const input = { method: "POST", path: "/wp-json/neo-authority/v1/content-inventory", timestamp, body: "{}" };
+  const inventory = signRequest({ secret, purpose: "cloud-inventory", ...input });
+  const publishing = signRequest({ secret, purpose: "cloud-to-wordpress", ...input });
+  assert.notEqual(inventory, publishing);
+});
