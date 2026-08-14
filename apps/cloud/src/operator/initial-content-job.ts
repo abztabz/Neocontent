@@ -16,7 +16,8 @@ type OperatorProgramRepository = Pick<SupabaseRepository,
 >;
 
 const initialJobKey = "site-connected-v1";
-const activeStatuses = new Set(["researching", "brief_ready", "draft_ready", "delivered", "changes_requested"]);
+const operatorActionStatuses = new Set(["researching", "brief_ready", "draft_ready", "changes_requested"]);
+const maximumAwaitingCustomerReview = 3;
 
 function list(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String).map((item) => item.trim()).filter(Boolean).slice(0, 50) : [];
@@ -153,8 +154,12 @@ export async function createScheduledOperatorContentJob(
     return { status: "deferred", reason: "Website learning must complete before research" };
   }
   const jobs = await repository.listCustomerContentJobs(siteId, 100);
-  if (jobs.some((job) => activeStatuses.has(String(job.status ?? "")))) {
-    return { status: "deferred", reason: "An article is already in progress" };
+  if (jobs.some((job) => operatorActionStatuses.has(String(job.status ?? "")))) {
+    return { status: "deferred", reason: "An article still requires operator action" };
+  }
+  const awaitingCustomerReview = jobs.filter((job) => String(job.status ?? "") === "delivered").length;
+  if (awaitingCustomerReview >= maximumAwaitingCustomerReview) {
+    return { status: "deferred", reason: "Customer review queue has reached its limit" };
   }
   const scheduledFor = String(site.next_run_at || new Date().toISOString());
   return createProgramJob(repository, site, `cadence:${scheduledFor}`, "scheduled_cadence");
