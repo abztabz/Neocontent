@@ -60,7 +60,39 @@ test("defers scheduled research while an article still requires action", async (
     listCustomerContentJobs: async () => [{ id: "job-a", status: "brief_ready" }],
   };
   const result = await createScheduledOperatorContentJob(repository as never, { id: "site-a", content_learning_status: "completed" });
-  assert.deepEqual(result, { status: "deferred", reason: "An article is already in progress" });
+  assert.deepEqual(result, { status: "deferred", reason: "An article still requires operator action" });
+});
+
+test("continues scheduled research while fewer than three drafts await customer review", async () => {
+  const insertedJobs: Record<string, unknown>[] = [];
+  const repository = {
+    findOperatorContentJobByIdempotencyKey: async () => null,
+    listApprovedKnowledge: async () => [], listApprovedSources: async () => [], listRecentArticles: async () => [],
+    listCustomerContentJobs: async () => insertedJobs.length ? insertedJobs : [
+      { id: "delivered-a", status: "delivered", topic: "First article" },
+      { id: "delivered-b", status: "delivered", topic: "Second article" },
+    ],
+    listSiteContentItems: async () => [], updateSite: async () => ({}),
+    insertOperatorContentJob: async (input: Record<string, unknown>) => {
+      const job = { id: "scheduled-job", ...input }; insertedJobs.push(job); return job;
+    },
+    insertOperatorAuditEvent: async (input: Record<string, unknown>) => input,
+    insertOperatorNotificationOutbox: async () => null,
+  };
+  const result = await createScheduledOperatorContentJob(repository as never, {
+    id: "site-a", organization_id: "org-a", website_url: "https://example.com/", business_name: "Example Media",
+    industry: "media", target_audience: "readers", cadence: "daily", next_run_at: "2026-08-14T00:00:00.000Z",
+    content_learning_status: "completed",
+  });
+  assert.equal(result.id, "scheduled-job");
+});
+
+test("pauses scheduled research when three drafts await customer review", async () => {
+  const repository = { listCustomerContentJobs: async () => [
+    { id: "delivered-a", status: "delivered" }, { id: "delivered-b", status: "delivered" }, { id: "delivered-c", status: "delivered" },
+  ] };
+  const result = await createScheduledOperatorContentJob(repository as never, { id: "site-a", content_learning_status: "completed" });
+  assert.deepEqual(result, { status: "deferred", reason: "Customer review queue has reached its limit" });
 });
 
 test("creates the next brief after the previous article is completed", async () => {
