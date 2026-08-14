@@ -245,10 +245,11 @@ export default async function handler(request: VercelRequestLike, response: Verc
     eventsByJob.set(jobId, [...(eventsByJob.get(jobId) ?? []), event]);
   }
   const csrf = html(operatorCookies(request).neo_operator_csrf ?? "");
-  const group = (status: unknown): "researching" | "ready" | "changes" | "completed" => {
+  const group = (status: unknown): "researching" | "ready" | "changes" | "review" | "completed" => {
     if (status === "changes_requested") return "changes";
     if (status === "brief_ready" || status === "draft_ready") return "ready";
     if (status === "researching") return "researching";
+    if (status === "delivered") return "review";
     return "completed";
   };
   const label = (status: unknown): string => ({
@@ -287,6 +288,7 @@ export default async function handler(request: VercelRequestLike, response: Verc
     { key: "researching", title: "Researching" },
     { key: "ready", title: "Briefs ready" },
     { key: "changes", title: "Awaiting changes" },
+    { key: "review", title: "Awaiting customer review" },
     { key: "completed", title: "Completed" },
   ] as const;
   const counts = Object.fromEntries(sections.map(({ key }) => [key, jobs.filter((job) => group(job.status) === key).length])) as Record<string, number>;
