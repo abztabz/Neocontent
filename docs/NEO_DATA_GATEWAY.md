@@ -63,11 +63,27 @@ Before an operator-managed Luna brief is created, NeoContent now:
 2. selects a distinct content opportunity;
 3. requests bounded current-news and scholarly discovery metadata through Neo Data Gateway;
 4. runs independent capability requests in parallel while preserving sequential fallbacks inside each capability;
-5. embeds normalized records in `externalResearchLeads` with an explicit discovery-only instruction;
-6. requires Luna to independently verify any underlying source before using it as evidence;
-7. continues creating the brief even if every external discovery provider is unavailable.
+5. deduplicates discovery records before they enter the brief;
+6. assigns a temporal role to each lead so current signals are not confused with historical context;
+7. embeds normalized records in `externalResearchLeads` with an explicit discovery-only instruction;
+8. requires Luna to independently verify any underlying source before using it as evidence;
+9. continues creating the brief even if every external discovery provider is unavailable.
 
 Provider availability therefore improves research speed without becoming a queue dependency or a source-of-truth shortcut.
+
+## Research lead quality
+
+Discovery records are curated before they enter Luna's governed brief:
+
+- duplicates are collapsed by DOI first, then normalized HTTPS URL, then normalized title;
+- common tracking parameters and URL fragments are ignored for duplicate detection;
+- all records are explicitly reset to `verificationStatus: discovery_only` even if upstream metadata suggests otherwise;
+- brief payloads are capped at 13 discovery leads;
+- news records are labelled `current_signal`, `recent_signal`, or `historical_signal` based on publication date;
+- scholarly records are labelled `recent_research` or `established_research`;
+- missing dates are labelled `unknown_time` rather than guessed.
+
+Luna is instructed to use these temporal roles only as research context. A historical news item cannot establish that a premise is current, and a discovery lead still requires independent verification.
 
 ## Observability and audit privacy
 
