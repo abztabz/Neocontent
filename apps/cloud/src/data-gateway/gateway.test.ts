@@ -82,7 +82,25 @@ test("falls through empty Crossref results to DataCite", async () => {
   if (!result.ok) return;
   assert.equal(result.provider, "datacite");
   assert.equal(result.attempts.length, 1);
+  assert.equal(result.attempts[0].outcome, "empty");
   assert.equal((result.data as Record<string, unknown>[])[0].doi, "10.5555/example");
+});
+
+test("gateway telemetry records timing and outcome without retaining query or raw errors", async () => {
+  const times = [0, 25, 30, 80].map((milliseconds) => new Date(`2026-08-15T00:00:00.${String(milliseconds).padStart(3, "0")}Z`));
+  const now = () => times.shift() ?? new Date("2026-08-15T00:00:01.000Z");
+  const gateway = new NeoDataGateway({
+    crossref: async () => { throw new Error("private topic phrase should never be persisted"); },
+    datacite: async () => ({ data: [{ title: "safe normalized row" }] }),
+  }, now);
+  const result = await gateway.request("scholarly-discovery", { query: "private topic phrase" });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.provider, "datacite");
+  assert.deepEqual(result.attempts, [{ provider: "crossref", durationMs: 25, outcome: "error" }]);
+  assert.equal(result.durationMs, 50);
+  const telemetry = JSON.stringify({ attempts: result.attempts, durationMs: result.durationMs, provider: result.provider });
+  assert.equal(telemetry.includes("private topic phrase"), false);
 });
 
 test("provider failure is contained inside the gateway", async () => {
@@ -91,4 +109,6 @@ test("provider failure is contained inside the gateway", async () => {
   const result = await gateway.request("news-discovery", { query: "current topic" });
   assert.equal(result.ok, false);
   assert.equal(result.attempts.length, 1);
+  assert.equal(result.attempts[0].outcome, "error");
+  assert.equal("message" in result.attempts[0], false);
 });
