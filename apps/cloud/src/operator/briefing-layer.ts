@@ -120,7 +120,7 @@ function discoveryLeads(value: unknown) {
   return {
     generatedAt: source.generatedAt ?? null,
     usage: "discovery_only_requires_independent_verification",
-    instruction: "Research records and SEO signals are discovery inputs, not verified evidence. Verify factual sources independently. SERP rankings, related questions, related searches and result-count estimates may inform current search language, but they are not proof of search volume, keyword difficulty, traffic, popularity or factual truth.",
+    instruction: "Research records and SEO signals are discovery inputs, not verified evidence. Verify factual sources independently. Use temporalRole to distinguish current signals, recent context, historical news and established research. SERP rankings, related questions, related searches and result-count estimates may inform current search language, but they are not proof of search volume, keyword difficulty, traffic, popularity or factual truth.",
     providers,
     items,
     seoSignals,
