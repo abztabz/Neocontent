@@ -6,6 +6,7 @@ import { serpApiAdapter } from "../data-gateway/providers/serpapi.js";
 import { zenserpAdapter } from "../data-gateway/providers/zenserp.js";
 import { boundedQuery } from "../data-gateway/http.js";
 import { curateResearchLeads } from "./lead-quality.js";
+import { selectResearchCapabilities } from "./industry-capability-policy.js";
 
 function itemCount(value: unknown): number {
   return Array.isArray(value) ? value.length : value == null ? 0 : 1;
@@ -15,6 +16,7 @@ export async function collectResearchLeads(input: {
   topic: string;
   industry: string;
   location?: string;
+  services?: string[];
 }) {
   const query = [
     boundedQuery(input.topic, 300),
@@ -33,16 +35,26 @@ export async function collectResearchLeads(input: {
   if (zenserpKey) adapters.zenserp = zenserpAdapter(zenserpKey);
   const gateway = new NeoDataGateway(adapters);
   const seoEnabled = process.env.NEO_ENABLE_EXPERIMENTAL_SEO === "true" && Boolean(serpApiKey || zenserpKey);
-
-  const [news, scholarly, seo] = await Promise.all([
-    gateway.request("news-discovery", { query, days: 14, limit: 8 }),
-    gateway.request("scholarly-discovery", { query, limit: 5 }),
-    seoEnabled
-      ? gateway.request("seo-serp-discovery", { query: boundedQuery(input.topic, 300), location: boundedQuery(input.location, 120) }, { includeExperimental: true })
-      : Promise.resolve(null),
-  ]);
-  const evidenceResults = [news, scholarly];
-  const results = seo ? [...evidenceResults, seo] : evidenceResults;
+  const routing = selectResearchCapabilities({
+    industry: input.industry,
+    services: input.services,
+    topic: input.topic,
+    experimentalSeoEnabled: seoEnabled,
+  });
+  const results = await Promise.all(routing.capabilities.map((capability) => {
+    if (capability === "news-discovery") {
+      return gateway.request(capability, { query, days: 14, limit: 8 });
+    }
+    if (capability === "scholarly-discovery") {
+      return gateway.request(capability, { query, limit: 5 });
+    }
+    return gateway.request(capability, {
+      query: boundedQuery(input.topic, 300),
+      location: boundedQuery(input.location, 120),
+    }, { includeExperimental: true });
+  }));
+  const evidenceResults = results.filter((result) => result.capability !== "seo-serp-discovery");
+  const seo = results.find((result) => result.capability === "seo-serp-discovery") ?? null;
   const successfulEvidence = evidenceResults.filter((result) => result.ok);
   const diagnostics = results.map((result) => result.ok
     ? {
@@ -81,6 +93,7 @@ export async function collectResearchLeads(input: {
   return {
     generatedAt: generatedAt.toISOString(),
     usage: "discovery_only_requires_independent_verification",
+    routing,
     providers: successful.map((result) => ({
       id: result.provider,
       observedAt: result.observedAt,

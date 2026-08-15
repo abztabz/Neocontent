@@ -68,6 +68,16 @@ function websiteEvidence(topic: string, value: unknown): UnknownRecord[] {
 
 function discoveryLeads(value: unknown) {
   const source = record(value);
+  const sourceRouting = record(source.routing);
+  const allowedCapabilities = new Set(["news-discovery", "scholarly-discovery", "seo-serp-discovery"]);
+  const routingCapabilities = strings(sourceRouting.capabilities, 3)
+    .filter((capability) => allowedCapabilities.has(capability));
+  const routing = routingCapabilities.length > 0 ? {
+    profile: sourceRouting.profile === "evidence_heavy" ? "evidence_heavy" : "general",
+    capabilities: routingCapabilities,
+    reasons: strings(sourceRouting.reasons, 3).map((reason) => reason.slice(0, 100)),
+    governance: "capability_selection_only_provider_routing_owned_by_neoos_source_registry",
+  } : null;
   const items = Array.isArray(source.items) ? source.items.map(record).slice(0, 13).flatMap((item) => {
     let url = "";
     try {
@@ -121,6 +131,7 @@ function discoveryLeads(value: unknown) {
     generatedAt: source.generatedAt ?? null,
     usage: "discovery_only_requires_independent_verification",
     instruction: "Research records and SEO signals are discovery inputs, not verified evidence. Verify factual sources independently. Use temporalRole to distinguish current signals, recent context, historical news and established research. SERP rankings, related questions, related searches and result-count estimates may inform current search language, but they are not proof of search volume, keyword difficulty, traffic, popularity or factual truth.",
+    routing,
     providers,
     items,
     seoSignals,

@@ -38,6 +38,10 @@ function boundedCount(value: unknown): number {
 
 export function researchAuditSummary(value: unknown) {
   const research = record(value);
+  const routing = record(research.routing);
+  const requestedCapabilities = Array.isArray(routing.capabilities)
+    ? routing.capabilities.map(String).map((capability) => capability.slice(0, 100)).filter(Boolean).slice(0, 10)
+    : [];
   const providers = Array.isArray(research.providers)
     ? research.providers.map(record).map((provider) => String(provider.id ?? "").slice(0, 100)).filter(Boolean).slice(0, 10)
     : [];
@@ -57,6 +61,12 @@ export function researchAuditSummary(value: unknown) {
     leadCount,
     providers,
     capabilities,
+    ...(requestedCapabilities.length > 0 ? {
+      routing: {
+        profile: routing.profile === "evidence_heavy" ? "evidence_heavy" : "general",
+        requestedCapabilities,
+      },
+    } : {}),
   };
 }
 
@@ -120,6 +130,7 @@ async function createProgramJob(
       topic: opportunity.title,
       industry: String(site.industry || ""),
       location: locations[0] ?? "",
+      services,
     });
   } catch (error) {
     console.warn("[research-gateway] discovery unavailable", {

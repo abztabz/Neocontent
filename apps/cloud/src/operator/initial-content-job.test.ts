@@ -5,6 +5,7 @@ import { createInitialOperatorContentJob, createScheduledOperatorContentJob, nex
 const research = async () => ({
   generatedAt: "2026-08-15T00:00:00.000Z",
   usage: "discovery_only_requires_independent_verification",
+  routing: { profile: "general" as const, capabilities: ["news-discovery" as const], reasons: ["current_public_context"] },
   providers: [{ id: "gdelt-doc", observedAt: "2026-08-15T00:00:00.000Z", attribution: "GDELT Project", dataBoundary: "Discovery only" }],
   items: [{ kind: "news", title: "Current research lead", url: "https://news.example/article", publisher: "news.example", discoveredVia: "gdelt-doc" }],
   seoSignals: [],
@@ -70,6 +71,7 @@ test("creates one governed first brief with discovery leads when a site is conne
       leadCount: 1,
       providers: ["gdelt-doc"],
       capabilities: [{ capability: "news-discovery", status: "ok", provider: "gdelt-doc", itemCount: 1, fallbackCount: 0, latencyMs: 125 }],
+      routing: { profile: "general", requestedCapabilities: ["news-discovery"] },
     },
   });
   const auditJson = JSON.stringify(audits[0].metadata);
@@ -79,6 +81,11 @@ test("creates one governed first brief with discovery leads when a site is conne
 
 test("research audit summaries never retain discovery titles, URLs, or raw diagnostics", () => {
   const summary = researchAuditSummary({
+    routing: {
+      profile: "evidence_heavy",
+      capabilities: ["news-discovery", "scholarly-discovery"],
+      customer: "private topic phrase",
+    },
     providers: [{ id: "crossref", secret: "do-not-copy" }],
     items: [{ title: "private topic phrase", url: "https://source.example/a" }],
     diagnostics: [{ capability: "scholarly-discovery", status: "ok", provider: "crossref", itemCount: 1, fallbackCount: 2, latencyMs: 99, rawError: "private topic phrase" }],
@@ -88,6 +95,10 @@ test("research audit summaries never retain discovery titles, URLs, or raw diagn
   assert.equal(serialized.includes("source.example"), false);
   assert.equal(serialized.includes("do-not-copy"), false);
   assert.deepEqual(summary.providers, ["crossref"]);
+  assert.deepEqual(summary.routing, {
+    profile: "evidence_heavy",
+    requestedCapabilities: ["news-discovery", "scholarly-discovery"],
+  });
 });
 
 test("defers scheduled research while an article still requires action", async () => {

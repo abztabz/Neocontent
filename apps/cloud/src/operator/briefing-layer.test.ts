@@ -19,6 +19,11 @@ test("creates a governed customer-specific Luna brief", () => {
       }],
       externalResearchLeads: {
         generatedAt: "2026-08-15T00:00:00.000Z",
+        routing: {
+          profile: "evidence_heavy",
+          capabilities: ["news-discovery", "scholarly-discovery", "unapproved-capability"],
+          reasons: ["current_public_context", "evidence_heavy_customer_context"],
+        },
         providers: [{ id: "gdelt-doc", attribution: "GDELT Project", dataBoundary: "Discovery only" }],
         items: [{
           kind: "news", title: "Current signal", url: "https://publisher.example/story",
@@ -40,6 +45,9 @@ test("creates a governed customer-specific Luna brief", () => {
   assert.equal((((brief.brandVoiceEvidence as Record<string, unknown>).samples as unknown[]).length), 1);
   assert.equal((((brief.customerWebsiteEvidence as Record<string, unknown>).items as unknown[]).length), 1);
   const leads = ((brief.externalResearchLeads as Record<string, unknown>).items as Record<string, unknown>[]);
+  const routing = ((brief.externalResearchLeads as Record<string, unknown>).routing as Record<string, unknown>);
+  assert.deepEqual(routing.capabilities, ["news-discovery", "scholarly-discovery"]);
+  assert.equal(routing.governance, "capability_selection_only_provider_routing_owned_by_neoos_source_registry");
   assert.equal(leads[0].temporalRole, "current_signal");
   assert.equal(leads[0].verificationStatus, "discovery_only");
   assert.match(String((brief.externalResearchLeads as Record<string, unknown>).instruction), /temporalRole/);
