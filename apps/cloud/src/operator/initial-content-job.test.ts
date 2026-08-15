@@ -7,6 +7,7 @@ const research = async () => ({
   usage: "discovery_only_requires_independent_verification",
   providers: [{ id: "gdelt-doc", observedAt: "2026-08-15T00:00:00.000Z", attribution: "GDELT Project", dataBoundary: "Discovery only" }],
   items: [{ kind: "news", title: "Current research lead", url: "https://news.example/article", publisher: "news.example", discoveredVia: "gdelt-doc" }],
+  seoSignals: [],
   diagnostics: [{ capability: "news-discovery", status: "ok", provider: "gdelt-doc", itemCount: 1, latencyMs: 125, fallbackCount: 0 }],
 });
 
