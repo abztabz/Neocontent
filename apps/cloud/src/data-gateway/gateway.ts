@@ -27,9 +27,13 @@ export class NeoDataGateway {
     private now: () => Date = () => new Date(),
   ) {}
 
-  async request(capability: string, input: Record<string, unknown>) {
+  async request(
+    capability: string,
+    input: Record<string, unknown>,
+    options: { includeExperimental?: boolean } = {},
+  ) {
     const attempts: GatewayAttempt[] = [];
-    for (const provider of providersFor(capability)) {
+    for (const provider of providersFor(capability, options)) {
       const adapter = this.adapters[provider.id];
       if (!adapter) continue;
       const startedAt = this.now();
