@@ -4,6 +4,12 @@
   "buildCommand": "npm run build",
   "installCommand": "npm ci",
   "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/api/v1/source-registry",
+      "destination": "/api/health?view=source-registry"
+    }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",
