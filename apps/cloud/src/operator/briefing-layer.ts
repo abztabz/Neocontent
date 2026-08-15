@@ -88,18 +88,42 @@ function discoveryLeads(value: unknown) {
       verificationStatus: "discovery_only",
     }];
   }) : [];
-  const providers = Array.isArray(source.providers) ? source.providers.map(record).slice(0, 5).map((provider) => ({
+  const providers = Array.isArray(source.providers) ? source.providers.map(record).slice(0, 8).map((provider) => ({
     id: String(provider.id ?? "").slice(0, 100),
     observedAt: provider.observedAt ?? null,
     attribution: String(provider.attribution ?? "").slice(0, 300),
     dataBoundary: String(provider.dataBoundary ?? "").slice(0, 1000),
   })) : [];
+  const seoSignals = Array.isArray(source.seoSignals) ? source.seoSignals.map(record).slice(0, 2).map((signal) => ({
+    discoveredVia: String(signal.discoveredVia ?? "").slice(0, 100),
+    organic: Array.isArray(signal.organic) ? signal.organic.map(record).slice(0, 8).flatMap((result) => {
+      let url = "";
+      try {
+        const parsed = new URL(String(result.url ?? ""));
+        if (parsed.protocol === "https:" && !parsed.username && !parsed.password) url = parsed.toString();
+      } catch {}
+      const title = String(result.title ?? "").trim().slice(0, 300);
+      if (!url || !title) return [];
+      return [{
+        position: Number.isFinite(Number(result.position)) ? Math.max(1, Math.min(100, Math.round(Number(result.position)))) : null,
+        title,
+        url,
+        domain: String(result.domain ?? "").slice(0, 300),
+      }];
+    }) : [],
+    relatedQuestions: strings(signal.relatedQuestions, 8).map((item) => item.slice(0, 240)),
+    relatedSearches: strings(signal.relatedSearches, 8).map((item) => item.slice(0, 240)),
+    resultCountEstimate: Number.isFinite(Number(signal.resultCountEstimate)) ? Math.max(0, Math.round(Number(signal.resultCountEstimate))) : null,
+    resultCountMeaning: "search_engine_result_estimate_not_search_volume_or_keyword_difficulty",
+    verificationStatus: "discovery_only",
+  })) : [];
   return {
     generatedAt: source.generatedAt ?? null,
     usage: "discovery_only_requires_independent_verification",
-    instruction: "These records are research leads, not verified evidence. Open and verify the underlying authoritative source before using any factual claim. Use temporalRole to distinguish current signals from recent or established context. Do not quote, summarize, or reproduce publisher content merely because a discovery provider returned its metadata.",
+    instruction: "Research records and SEO signals are discovery inputs, not verified evidence. Verify factual sources independently. SERP rankings, related questions, related searches and result-count estimates may inform current search language, but they are not proof of search volume, keyword difficulty, traffic, popularity or factual truth.",
     providers,
     items,
+    seoSignals,
   };
 }
 
@@ -136,7 +160,7 @@ export function createLunaBrief(input: {
         competitionEstimate: String(opportunity.competitionEstimate ?? "unknown").slice(0, 50),
         recommendedPublishBy: opportunity.recommendedPublishBy ?? null,
         evidenceStatus: "research_based_estimate",
-        verificationRule: "Use web research to verify current search language and audience demand. Never describe these hypotheses as measured search volume or verified ranking data.",
+        verificationRule: "Use current web and available SERP research to verify search language and audience demand. Never describe hypotheses or result counts as measured search volume, traffic, or verified keyword difficulty.",
       },
     },
     customer: {
@@ -171,11 +195,12 @@ export function createLunaBrief(input: {
       duplicationRule: "Do not substantially duplicate an existing article. Choose a distinct angle or search intent.",
     },
     researchProtocol: {
-      sequence: ["review_discovery_leads", "verify_timeliness", "identify_search_intent", "validate_keyword_language", "research_current_industry_evidence", "evaluate_customer_sources", "build_claim_map", "outline", "write", "verify"],
+      sequence: ["review_discovery_leads", "review_serp_language", "verify_timeliness", "identify_search_intent", "validate_keyword_language", "research_current_industry_evidence", "evaluate_customer_sources", "build_claim_map", "outline", "write", "verify"],
       preferredPublishers: ["government", "regulator", "university", "peer_reviewed_journal", "standards_body", "recognized_professional_association"],
       rules: [
         "Research the industry before drafting.",
         "Use externalResearchLeads only to accelerate discovery; independently verify the underlying source before supporting a claim.",
+        "Use SEO signals to observe SERP language, competing result types, related searches and audience questions; never treat them as factual evidence or measured keyword volume.",
         "Use temporalRole to distinguish current or recent news signals from established scholarly context; never use an old news signal as evidence that a topic is timely now.",
         "A GDELT headline or link is not factual evidence and does not grant rights to the linked publisher content.",
         "Crossref and DataCite records are bibliographic metadata; inspect the underlying work and its rights before relying on or quoting its content.",
