@@ -5,6 +5,12 @@ export type GatewayAdapter = (
   provider: SourceProvider,
 ) => Promise<{ data: unknown; sourceObservedAt?: string | null }>;
 
+function hasUsableData(value: unknown): boolean {
+  if (value == null) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
+
 export class NeoDataGateway {
   constructor(
     private adapters: Record<string, GatewayAdapter>,
@@ -19,7 +25,7 @@ export class NeoDataGateway {
       const startedAt = this.now().toISOString();
       try {
         const result = await adapter(input, provider);
-        if (!result || result.data == null) throw new Error("Provider returned no usable data");
+        if (!result || !hasUsableData(result.data)) throw new Error("Provider returned no usable data");
         return {
           ok: true as const,
           capability,
