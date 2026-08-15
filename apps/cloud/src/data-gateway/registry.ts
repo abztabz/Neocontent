@@ -38,6 +38,18 @@ export const sourceRegistry: readonly SourceProvider[] = Object.freeze([
     dataBoundary: "Bibliographic metadata only. Do not ingest abstracts or assume full-text rights.",
   },
   {
+    id: "datacite",
+    name: "DataCite REST API",
+    capabilities: ["scholarly-discovery"],
+    status: "approved",
+    auth: "none",
+    baseUrl: "https://api.datacite.org",
+    commercialUse: "approved",
+    attribution: "DataCite",
+    freshnessPolicy: "doi-metadata",
+    dataBoundary: "CC0 DOI metadata only. Linked resources remain subject to their own rights and must be independently verified.",
+  },
+  {
     id: "sec-edgar",
     name: "SEC EDGAR",
     capabilities: ["company-filings"],
