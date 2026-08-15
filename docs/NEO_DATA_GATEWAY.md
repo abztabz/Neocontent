@@ -12,14 +12,14 @@ The first deployable runtime lives in `apps/cloud/src/data-gateway` so it is com
 
 Provider lifecycle:
 
-- `experimental`: candidate under evaluation; never used by production selection.
-- `approved`: cleared for the explicitly documented capability and data boundary.
-- `blocked`: explicitly prohibited.
+- `experimental`: candidate under evaluation; never used by production selection unless an explicit experimental capability gate is enabled;
+- `approved`: cleared for the explicitly documented capability and data boundary;
+- `blocked`: explicitly prohibited;
 - `retired`: previously usable but no longer selected.
 
 Before promotion to `approved`, review security, licensing/commercial use, privacy, reliability, freshness, rate limits, data accuracy and the exact data fields being retained.
 
-Provider requests are HTTPS-only, origin-pinned, bounded, time-limited and redirect-disabled. Provider results are normalized before they enter NeoContent. Every successful result carries provenance and observation time. An empty provider result is treated as unavailable for that request so an approved fallback can be tried.
+Provider requests are HTTPS-only, origin-pinned, bounded, time-limited and redirect-disabled. Provider results are normalized before they enter NeoContent. Every successful result carries provenance and observation time. An empty provider result is treated as unavailable for that request so a fallback can be tried.
 
 ## Approved discovery providers
 
@@ -51,6 +51,27 @@ Documentation: https://support.datacite.org/docs/api
 
 Metadata use policy: https://support.datacite.org/docs/datacite-data-file-use-policy
 
+## Free-first SEO intelligence
+
+Capability: `seo-serp-discovery`.
+
+NeoContent now has adapters for two third-party SERP providers with free entry tiers:
+
+- **SerpApi** — adapter implemented; current free plan advertises 250 searches per month. The adapter retains only organic ranking metadata, related questions/searches and a coarse result-count estimate. Snippets are deliberately discarded.
+- **Zenserp** — adapter implemented as an experimental fallback; current free plan advertises 50 searches per month. Snippets/descriptions are deliberately discarded.
+
+Two additional candidates are governed in the registry:
+
+- **Serper** — experimental candidate because its current free allowance is materially larger, but no production adapter is enabled until its API contract and usage terms complete the same review.
+- **serpstack** — blocked for NeoContent production under the currently published license terms.
+
+The SEO capability is fail-closed. It runs only when `NEO_ENABLE_EXPERIMENTAL_SEO=true` and at least one provider credential is present server-side:
+
+- `NEO_SERPAPI_KEY`
+- `NEO_ZENSERP_KEY`
+
+SERP intelligence is never factual evidence and is never represented as measured search volume, traffic or keyword difficulty. It is used to observe ranking pages, related queries, audience questions and current search-result language. Result-count estimates are explicitly labelled as search-engine result estimates only.
+
 ## Experimental providers
 
 SEC EDGAR and FRED remain experimental. They are not selected by production requests until their dedicated adapters, usage constraints and data contracts are reviewed.
@@ -62,12 +83,14 @@ Before an operator-managed Luna brief is created, NeoContent now:
 1. learns the customer's public website;
 2. selects a distinct content opportunity;
 3. requests bounded current-news and scholarly discovery metadata through Neo Data Gateway;
-4. runs independent capability requests in parallel while preserving sequential fallbacks inside each capability;
-5. deduplicates discovery records before they enter the brief;
-6. assigns a temporal role to each lead so current signals are not confused with historical context;
-7. embeds normalized records in `externalResearchLeads` with an explicit discovery-only instruction;
-8. requires Luna to independently verify any underlying source before using it as evidence;
-9. continues creating the brief even if every external discovery provider is unavailable.
+4. optionally requests one bounded SERP snapshot when the free-first SEO capability is explicitly enabled;
+5. runs independent capability requests in parallel while preserving sequential fallbacks inside each capability;
+6. deduplicates factual discovery records before they enter the brief;
+7. assigns a temporal role to each factual lead so current signals are not confused with historical context;
+8. keeps SEO signals separate from factual research leads;
+9. embeds normalized records in `externalResearchLeads` with an explicit discovery-only instruction;
+10. requires Luna to independently verify any underlying factual source before using it as evidence;
+11. continues creating the brief even if every external discovery provider is unavailable.
 
 Provider availability therefore improves research speed without becoming a queue dependency or a source-of-truth shortcut.
 
