@@ -82,17 +82,26 @@ Before an operator-managed Luna brief is created, NeoContent now:
 
 1. learns the customer's public website;
 2. selects a distinct content opportunity;
-3. requests bounded current-news and scholarly discovery metadata through Neo Data Gateway;
-4. optionally requests one bounded SERP snapshot when the free-first SEO capability is explicitly enabled;
-5. runs independent capability requests in parallel while preserving sequential fallbacks inside each capability;
-6. deduplicates factual discovery records before they enter the brief;
-7. assigns a temporal role to each factual lead so current signals are not confused with historical context;
-8. keeps SEO signals separate from factual research leads;
-9. embeds normalized records in `externalResearchLeads` with an explicit discovery-only instruction;
-10. requires Luna to independently verify any underlying factual source before using it as evidence;
-11. continues creating the brief even if every external discovery provider is unavailable.
+3. selects a provider-neutral capability plan from the customer's industry, services and article topic;
+4. requests bounded discovery metadata through Neo Data Gateway only for those capabilities;
+5. optionally requests one bounded SERP snapshot when the free-first SEO capability is explicitly enabled;
+6. runs independent capability requests in parallel while preserving sequential fallbacks inside each capability;
+7. deduplicates factual discovery records before they enter the brief;
+8. assigns a temporal role to each factual lead so current signals are not confused with historical context;
+9. keeps SEO signals separate from factual research leads;
+10. embeds normalized records in `externalResearchLeads` with an explicit discovery-only instruction;
+11. requires Luna to independently verify any underlying factual source before using it as evidence;
+12. continues creating the brief even if every external discovery provider is unavailable.
 
 Provider availability therefore improves research speed without becoming a queue dependency or a source-of-truth shortcut.
+
+### Multi-industry capability routing
+
+NeoContent is a general product for many customer industries. It does not contain a Top Entertainment Nepal provider path or any other customer-specific adapter. Every customer starts with governed current-news discovery. Evidence-heavy contexts such as healthcare, science, education, environment, law and finance also request scholarly discovery. Other industries avoid irrelevant academic calls and retain the general news-discovery path. Unknown industries fail safely to that general plan.
+
+The policy selects capability identifiers only. It cannot select a vendor, approve an experimental source, change licensing status, or bypass provider health and fallback rules. Those decisions remain exclusively owned by the canonical NeoOS Source Registry. Experimental SEO is appended only when the existing operator environment gate is enabled and an approved server-side adapter credential is available.
+
+The selected profile and capability identifiers are included in the Luna brief and privacy-safe audit summary. Customer names, topics, queries and source URLs are never retained in routing telemetry.
 
 ## Research lead quality
 
