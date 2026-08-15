@@ -4,10 +4,11 @@ import { NeoDataGateway } from "./gateway.js";
 import { providersFor } from "./registry.js";
 import { gdeltAdapter } from "./providers/gdelt.js";
 import { crossrefAdapter } from "./providers/crossref.js";
+import { dataciteAdapter } from "./providers/datacite.js";
 
-test("production selection excludes experimental providers", () => {
+test("production selection excludes experimental providers and orders scholarly fallbacks", () => {
   assert.deepEqual(providersFor("news-discovery").map((provider) => provider.id), ["gdelt-doc"]);
-  assert.deepEqual(providersFor("scholarly-discovery").map((provider) => provider.id), ["crossref"]);
+  assert.deepEqual(providersFor("scholarly-discovery").map((provider) => provider.id), ["crossref", "datacite"]);
   assert.deepEqual(providersFor("company-filings").map((provider) => provider.id), []);
 });
 
@@ -52,6 +53,36 @@ test("normalizes Crossref bibliographic metadata without carrying abstracts", as
   assert.equal(rows[0].doi, "10.1234/example");
   assert.equal("abstract" in rows[0], false);
   assert.equal(rows[0].publishedAt, "2026-08-01T00:00:00.000Z");
+});
+
+test("falls through empty Crossref results to DataCite", async () => {
+  const fetcher = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.startsWith("https://api.crossref.org")) {
+      return new Response(JSON.stringify({ message: { items: [] } }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ data: [{
+      id: "10.5555/example",
+      attributes: {
+        doi: "10.5555/example",
+        titles: [{ title: "Dataset-backed research" }],
+        url: "https://repository.example/item",
+        publisher: "Example Repository",
+        publicationYear: 2026,
+        types: { resourceTypeGeneral: "Dataset" },
+      },
+    }] }), { status: 200, headers: { "content-type": "application/vnd.api+json" } });
+  }) as typeof fetch;
+  const gateway = new NeoDataGateway({
+    crossref: crossrefAdapter(fetcher),
+    datacite: dataciteAdapter(fetcher),
+  });
+  const result = await gateway.request("scholarly-discovery", { query: "specialized evidence" });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.provider, "datacite");
+  assert.equal(result.attempts.length, 1);
+  assert.equal((result.data as Record<string, unknown>[])[0].doi, "10.5555/example");
 });
 
 test("provider failure is contained inside the gateway", async () => {

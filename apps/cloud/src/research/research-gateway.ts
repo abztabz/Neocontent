@@ -1,6 +1,7 @@
 import { NeoDataGateway } from "../data-gateway/gateway.js";
 import { gdeltAdapter } from "../data-gateway/providers/gdelt.js";
 import { crossrefAdapter } from "../data-gateway/providers/crossref.js";
+import { dataciteAdapter } from "../data-gateway/providers/datacite.js";
 import { boundedQuery } from "../data-gateway/http.js";
 
 export async function collectResearchLeads(input: {
@@ -17,10 +18,13 @@ export async function collectResearchLeads(input: {
   const gateway = new NeoDataGateway({
     "gdelt-doc": gdeltAdapter(),
     crossref: crossrefAdapter(),
+    datacite: dataciteAdapter(),
   });
 
-  const news = await gateway.request("news-discovery", { query, days: 14, limit: 8 });
-  const scholarly = await gateway.request("scholarly-discovery", { query, limit: 5 });
+  const [news, scholarly] = await Promise.all([
+    gateway.request("news-discovery", { query, days: 14, limit: 8 }),
+    gateway.request("scholarly-discovery", { query, limit: 5 }),
+  ]);
   const results = [news, scholarly];
   const successful = results.filter((result) => result.ok);
 
@@ -40,7 +44,7 @@ export async function collectResearchLeads(input: {
         }))
       : []).slice(0, 13),
     diagnostics: results.map((result) => result.ok
-      ? { capability: result.capability, status: "ok", provider: result.provider }
+      ? { capability: result.capability, status: "ok", provider: result.provider, priorAttempts: result.attempts.length }
       : { capability: result.capability, status: "unavailable" }),
   };
 }

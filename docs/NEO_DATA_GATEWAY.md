@@ -19,9 +19,9 @@ Provider lifecycle:
 
 Before promotion to `approved`, review security, licensing/commercial use, privacy, reliability, freshness, rate limits, data accuracy and the exact data fields being retained.
 
-Provider requests are HTTPS-only, origin-pinned, bounded, time-limited and redirect-disabled. Provider results are normalized before they enter NeoContent. Every successful result carries provenance and observation time.
+Provider requests are HTTPS-only, origin-pinned, bounded, time-limited and redirect-disabled. Provider results are normalized before they enter NeoContent. Every successful result carries provenance and observation time. An empty provider result is treated as unavailable for that request so an approved fallback can be tried.
 
-## Phase 2 approved discovery providers
+## Approved discovery providers
 
 ### GDELT DOC 2.0
 
@@ -33,13 +33,23 @@ Terms: https://www.gdeltproject.org/about.html#termsofuse
 
 ### Crossref REST API
 
-Capability: `scholarly-discovery`.
+Capability: primary `scholarly-discovery` provider.
 
 NeoContent uses public Crossref bibliographic metadata to locate potentially relevant scholarly works. It deliberately excludes abstracts and full text. A Crossref record is a discovery lead; the underlying work and its rights must be inspected before quotation or factual reliance.
 
 Documentation: https://www.crossref.org/documentation/retrieve-metadata/rest-api/
 
 `NEO_CROSSREF_MAILTO` may optionally identify NeoContent to Crossref's polite pool. It is not a required secret or credential.
+
+### DataCite REST API
+
+Capability: fallback `scholarly-discovery` provider.
+
+DataCite's public API requires no authentication for DOI metadata retrieval, and DataCite makes its aggregated DOI metadata available under CC0. NeoContent retains only normalized bibliographic metadata and does not infer rights to linked resources. DataCite is attempted when Crossref fails or returns no usable records.
+
+Documentation: https://support.datacite.org/docs/api
+
+Metadata use policy: https://support.datacite.org/docs/datacite-data-file-use-policy
 
 ## Experimental providers
 
@@ -52,9 +62,10 @@ Before an operator-managed Luna brief is created, NeoContent now:
 1. learns the customer's public website;
 2. selects a distinct content opportunity;
 3. requests bounded current-news and scholarly discovery metadata through Neo Data Gateway;
-4. embeds those records in `externalResearchLeads` with an explicit discovery-only instruction;
-5. requires Luna to independently verify any underlying source before using it as evidence;
-6. continues creating the brief even if every external discovery provider is unavailable.
+4. runs independent capability requests in parallel while preserving sequential fallbacks inside each capability;
+5. embeds normalized records in `externalResearchLeads` with an explicit discovery-only instruction;
+6. requires Luna to independently verify any underlying source before using it as evidence;
+7. continues creating the brief even if every external discovery provider is unavailable.
 
 Provider availability therefore improves research speed without becoming a queue dependency or a source-of-truth shortcut.
 
