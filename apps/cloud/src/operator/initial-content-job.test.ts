@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createInitialOperatorContentJob, createScheduledOperatorContentJob, nextResearchAt } from "./initial-content-job.js";
+import { createInitialOperatorContentJob, createScheduledOperatorContentJob, nextResearchAt, researchAuditSummary } from "./initial-content-job.js";
 
 const research = async () => ({
   generatedAt: "2026-08-15T00:00:00.000Z",
   usage: "discovery_only_requires_independent_verification",
   providers: [{ id: "gdelt-doc", observedAt: "2026-08-15T00:00:00.000Z", attribution: "GDELT Project", dataBoundary: "Discovery only" }],
   items: [{ kind: "news", title: "Current research lead", url: "https://news.example/article", publisher: "news.example", discoveredVia: "gdelt-doc" }],
-  diagnostics: [],
+  diagnostics: [{ capability: "news-discovery", status: "ok", provider: "gdelt-doc", itemCount: 1, latencyMs: 125, fallbackCount: 0 }],
 });
 
 test("calculates the next research time from the customer cadence", () => {
@@ -62,7 +62,31 @@ test("creates one governed first brief with discovery leads when a site is conne
   assert.equal(brief.schemaVersion, "neo-luna-brief-v1");
   assert.equal((((brief.externalResearchLeads as Record<string, unknown>).items as unknown[]).length), 1);
   assert.equal(audits.length, 1);
-  assert.deepEqual(audits[0].metadata, { trigger: "site_connected" });
+  assert.deepEqual(audits[0].metadata, {
+    trigger: "site_connected",
+    research: {
+      status: "available",
+      leadCount: 1,
+      providers: ["gdelt-doc"],
+      capabilities: [{ capability: "news-discovery", status: "ok", provider: "gdelt-doc", itemCount: 1, fallbackCount: 0, latencyMs: 125 }],
+    },
+  });
+  const auditJson = JSON.stringify(audits[0].metadata);
+  assert.equal(auditJson.includes("Current research lead"), false);
+  assert.equal(auditJson.includes("news.example"), false);
+});
+
+test("research audit summaries never retain discovery titles, URLs, or raw diagnostics", () => {
+  const summary = researchAuditSummary({
+    providers: [{ id: "crossref", secret: "do-not-copy" }],
+    items: [{ title: "private topic phrase", url: "https://source.example/a" }],
+    diagnostics: [{ capability: "scholarly-discovery", status: "ok", provider: "crossref", itemCount: 1, fallbackCount: 2, latencyMs: 99, rawError: "private topic phrase" }],
+  });
+  const serialized = JSON.stringify(summary);
+  assert.equal(serialized.includes("private topic phrase"), false);
+  assert.equal(serialized.includes("source.example"), false);
+  assert.equal(serialized.includes("do-not-copy"), false);
+  assert.deepEqual(summary.providers, ["crossref"]);
 });
 
 test("defers scheduled research while an article still requires action", async () => {
@@ -146,15 +170,16 @@ test("creates the next brief after the previous article is completed", async () 
 
 test("still creates a brief when external discovery is unavailable", async () => {
   const insertedJobs: Record<string, unknown>[] = [];
+  const audits: Record<string, unknown>[] = [];
   const repository = {
     findOperatorContentJobByIdempotencyKey: async () => null,
     listApprovedKnowledge: async () => [], listApprovedSources: async () => [], listRecentArticles: async () => [],
     listCustomerContentJobs: async () => [], listSiteContentItems: async () => [], updateSite: async () => ({}),
     insertOperatorContentJob: async (input: Record<string, unknown>) => { const job = { id: "job", ...input }; insertedJobs.push(job); return job; },
-    insertOperatorAuditEvent: async (input: Record<string, unknown>) => input,
+    insertOperatorAuditEvent: async (input: Record<string, unknown>) => (audits.push(input), input),
     insertOperatorNotificationOutbox: async () => null,
   };
-  const unavailable = async () => { throw new Error("provider outage"); };
+  const unavailable = async () => { throw new Error("provider outage with private query material"); };
   const result = await createInitialOperatorContentJob(repository as never, {
     id: "site-a", organization_id: "org-a", business_name: "Example", industry: "media", target_audience: "readers",
     content_learning_status: "completed",
@@ -162,6 +187,9 @@ test("still creates a brief when external discovery is unavailable", async () =>
   assert.equal(result.id, "job");
   const brief = insertedJobs[0].brief_payload as Record<string, unknown>;
   assert.equal((((brief.externalResearchLeads as Record<string, unknown>).items as unknown[]).length), 0);
+  const auditJson = JSON.stringify(audits[0].metadata);
+  assert.equal(auditJson.includes("private query material"), false);
+  assert.match(auditJson, /unavailable/);
 });
 
 test("defers all topic generation until website learning completes", async () => {
