@@ -4,34 +4,60 @@
 
 Neo Data Gateway is the provider-independent external-data layer for Neo products. Products request a capability rather than calling a vendor directly.
 
-The public-apis/public-apis repository is treated only as a discovery catalogue. Listing there never makes a provider trusted or approved.
+The `public-apis/public-apis` repository is discovery input only. Listing there never makes a provider trusted or approved.
+
+The first deployable runtime lives in `apps/cloud/src/data-gateway` so it is compiled, tested and deployed with the existing NeoContent cloud service. The provider contract remains product-independent; other Neo products should consume a governed service boundary rather than call vendors directly.
 
 ## Governance
 
 Provider lifecycle:
 
-- `experimental`: candidate under evaluation; never used by default.
-- `approved`: cleared for production use.
+- `experimental`: candidate under evaluation; never used by production selection.
+- `approved`: cleared for the explicitly documented capability and data boundary.
 - `blocked`: explicitly prohibited.
 - `retired`: previously usable but no longer selected.
 
-Before promotion to `approved`, review security, licensing/commercial use, privacy, reliability, freshness, rate limits and data accuracy.
+Before promotion to `approved`, review security, licensing/commercial use, privacy, reliability, freshness, rate limits, data accuracy and the exact data fields being retained.
 
-Secrets must remain server-side. Provider responses should be normalized before they leave the gateway. Every successful response must carry provider provenance and observation time.
+Provider requests are HTTPS-only, origin-pinned, bounded, time-limited and redirect-disabled. Provider results are normalized before they enter NeoContent. Every successful result carries provenance and observation time.
 
-## Phase 1
+## Phase 2 approved discovery providers
 
-The initial package implements:
+### GDELT DOC 2.0
 
-1. a governed source registry;
-2. capability-based provider selection;
-3. fail-closed defaults;
-4. optional experimental-provider execution;
-5. sequential fallback between eligible adapters;
-6. provenance and attempt metadata.
+Capability: `news-discovery`.
 
-SEC EDGAR and FRED are seeded as experimental examples only. No live provider is enabled by this change.
+GDELT permits unrestricted commercial use of its datasets subject to GDELT attribution. NeoContent retains only discovery metadata such as headline, publisher/domain, date and source URL. A GDELT result is never treated as verification of the linked publisher's claim and does not grant rights to reproduce the linked article.
 
-## Next integration
+Terms: https://www.gdeltproject.org/about.html#termsofuse
 
-NeoContent should first consume research-oriented capabilities through this package. After provider review, add adapters and normalized contracts for news discovery, economic/company evidence and other research signals. NeoCRM and NeoOS can later consume the same contracts without depending directly on individual vendors.
+### Crossref REST API
+
+Capability: `scholarly-discovery`.
+
+NeoContent uses public Crossref bibliographic metadata to locate potentially relevant scholarly works. It deliberately excludes abstracts and full text. A Crossref record is a discovery lead; the underlying work and its rights must be inspected before quotation or factual reliance.
+
+Documentation: https://www.crossref.org/documentation/retrieve-metadata/rest-api/
+
+`NEO_CROSSREF_MAILTO` may optionally identify NeoContent to Crossref's polite pool. It is not a required secret or credential.
+
+## Experimental providers
+
+SEC EDGAR and FRED remain experimental. They are not selected by production requests until their dedicated adapters, usage constraints and data contracts are reviewed.
+
+## NeoContent integration
+
+Before an operator-managed Luna brief is created, NeoContent now:
+
+1. learns the customer's public website;
+2. selects a distinct content opportunity;
+3. requests bounded current-news and scholarly discovery metadata through Neo Data Gateway;
+4. embeds those records in `externalResearchLeads` with an explicit discovery-only instruction;
+5. requires Luna to independently verify any underlying source before using it as evidence;
+6. continues creating the brief even if every external discovery provider is unavailable.
+
+Provider availability therefore improves research speed without becoming a queue dependency or a source-of-truth shortcut.
+
+## Future product boundary
+
+NeoCRM, NeoOS Wealth and future Neo products should consume normalized gateway capabilities rather than provider-specific endpoints. A shared authenticated service endpoint should only be introduced after inter-product authentication, tenant isolation and rate-governance are defined.

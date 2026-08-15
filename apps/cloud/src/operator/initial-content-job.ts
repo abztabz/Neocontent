@@ -1,5 +1,6 @@
 import type { SupabaseRepository } from "../db/supabase.js";
 import { generateOpportunities, selectOpportunity } from "../opportunities/opportunity-engine.js";
+import { collectResearchLeads } from "../research/research-gateway.js";
 import { createLunaBrief } from "./briefing-layer.js";
 import { notifyOperatorSafely } from "./push-notifications.js";
 
@@ -14,6 +15,8 @@ type OperatorProgramRepository = Pick<SupabaseRepository,
   | "listSiteContentItems"
   | "updateSite"
 >;
+
+type ResearchCollector = typeof collectResearchLeads;
 
 const initialJobKey = "site-connected-v1";
 const operatorActionStatuses = new Set(["researching", "brief_ready", "draft_ready", "changes_requested"]);
@@ -37,6 +40,7 @@ async function createProgramJob(
   site: Record<string, unknown>,
   idempotencyKey: string,
   trigger: "site_connected" | "scheduled_cadence",
+  researchCollector: ResearchCollector,
 ) {
   const siteId = String(site.id ?? "");
   const organizationId = String(site.organization_id ?? "");
@@ -75,6 +79,28 @@ async function createProgramJob(
   });
   const opportunity = selectOpportunity(opportunities);
   const customerSummary = `${opportunity.rationale} ${opportunity.whyNow}`;
+
+  let externalResearchLeads: Record<string, unknown>;
+  try {
+    externalResearchLeads = await researchCollector({
+      topic: opportunity.title,
+      industry: String(site.industry || ""),
+      location: locations[0] ?? "",
+    });
+  } catch (error) {
+    console.warn("[research-gateway] discovery unavailable", {
+      errorName: error instanceof Error ? error.name : "Error",
+      errorMessage: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300),
+    });
+    externalResearchLeads = {
+      generatedAt: new Date().toISOString(),
+      usage: "discovery_only_requires_independent_verification",
+      providers: [],
+      items: [],
+      diagnostics: [{ status: "unavailable" }],
+    };
+  }
+
   const brief = createLunaBrief({
     topic: opportunity.title,
     customerSummary,
@@ -108,6 +134,7 @@ async function createProgramJob(
         modifiedAt: item.modified_at ?? null,
         metadata: item.metadata ?? {},
       })),
+      externalResearchLeads,
       existingArticleTitles: existingTitles,
     },
   });
@@ -140,13 +167,15 @@ async function createProgramJob(
 export async function createInitialOperatorContentJob(
   repository: OperatorProgramRepository,
   site: Record<string, unknown>,
+  researchCollector: ResearchCollector = collectResearchLeads,
 ) {
-  return createProgramJob(repository, site, initialJobKey, "site_connected");
+  return createProgramJob(repository, site, initialJobKey, "site_connected", researchCollector);
 }
 
 export async function createScheduledOperatorContentJob(
   repository: OperatorProgramRepository,
   site: Record<string, unknown>,
+  researchCollector: ResearchCollector = collectResearchLeads,
 ) {
   const siteId = String(site.id ?? "");
   if (!siteId) throw new Error("Scheduled site identifier is missing");
@@ -162,5 +191,5 @@ export async function createScheduledOperatorContentJob(
     return { status: "deferred", reason: "Customer review queue has reached its limit" };
   }
   const scheduledFor = String(site.next_run_at || new Date().toISOString());
-  return createProgramJob(repository, site, `cadence:${scheduledFor}`, "scheduled_cadence");
+  return createProgramJob(repository, site, `cadence:${scheduledFor}`, "scheduled_cadence", researchCollector);
 }
