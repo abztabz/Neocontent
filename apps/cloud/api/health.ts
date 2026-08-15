@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { VercelRequestLike, VercelResponseLike } from "./_http.js";
+import { capabilityById, safeRegistrySnapshot } from "../src/data-gateway/capabilities.js";
 
 interface CheckResult {
   status: "ok" | "error" | "not_configured";
@@ -30,9 +31,37 @@ async function checkOpenAI(): Promise<CheckResult> {
   return { status: response.ok ? "ok" : "error", httpStatus: response.status };
 }
 
+function firstQueryValue(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? String(value[0] ?? "") : String(value ?? "");
+}
+
+function sendSourceRegistry(request: VercelRequestLike, response: VercelResponseLike) {
+  response.setHeader?.("Access-Control-Allow-Origin", "*");
+  const requested = firstQueryValue(request.query.capability).trim();
+  const snapshot = safeRegistrySnapshot();
+  if (requested) {
+    const capability = capabilityById(requested);
+    if (!capability) return response.status(404).json({ ok: false, error: "CAPABILITY_NOT_FOUND" });
+    return response.status(200).json({
+      schemaVersion: "neo-source-registry-v1",
+      scope: "shared-public-governance-metadata",
+      capability: snapshot.find((item) => item.id === requested),
+    });
+  }
+  return response.status(200).json({
+    schemaVersion: "neo-source-registry-v1",
+    scope: "shared-public-governance-metadata",
+    capabilities: snapshot,
+  });
+}
+
 export default async function handler(request: VercelRequestLike, response: VercelResponseLike) {
   if (request.method !== "GET") {
     return response.status(405).json({ ok: false, error: "METHOD_NOT_ALLOWED" });
+  }
+
+  if (firstQueryValue(request.query.view) === "source-registry") {
+    return sendSourceRegistry(request, response);
   }
 
   const authorization = Array.isArray(request.headers.authorization)
