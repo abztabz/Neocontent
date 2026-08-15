@@ -2,6 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createInitialOperatorContentJob, createScheduledOperatorContentJob, nextResearchAt } from "./initial-content-job.js";
 
+const research = async () => ({
+  generatedAt: "2026-08-15T00:00:00.000Z",
+  usage: "discovery_only_requires_independent_verification",
+  providers: [{ id: "gdelt-doc", observedAt: "2026-08-15T00:00:00.000Z", attribution: "GDELT Project", dataBoundary: "Discovery only" }],
+  items: [{ kind: "news", title: "Current research lead", url: "https://news.example/article", publisher: "news.example", discoveredVia: "gdelt-doc" }],
+  diagnostics: [],
+});
+
 test("calculates the next research time from the customer cadence", () => {
   const start = new Date("2026-08-12T00:00:00.000Z");
   assert.equal(nextResearchAt("daily", start), "2026-08-13T00:00:00.000Z");
@@ -10,7 +18,7 @@ test("calculates the next research time from the customer cadence", () => {
   assert.equal(nextResearchAt("monthly", start), "2026-09-12T00:00:00.000Z");
 });
 
-test("creates one governed first brief when a site is connected", async () => {
+test("creates one governed first brief with discovery leads when a site is connected", async () => {
   const insertedJobs: Record<string, unknown>[] = [];
   const audits: Record<string, unknown>[] = [];
   const repository = {
@@ -44,13 +52,15 @@ test("creates one governed first brief when a site is connected", async () => {
     content_learning_status: "completed",
   };
 
-  const first = await createInitialOperatorContentJob(repository as never, site);
-  const second = await createInitialOperatorContentJob(repository as never, site);
+  const first = await createInitialOperatorContentJob(repository as never, site, research);
+  const second = await createInitialOperatorContentJob(repository as never, site, research);
 
   assert.equal(first.id, second.id);
   assert.equal(insertedJobs[0].status, "brief_ready");
   assert.equal(insertedJobs[0].idempotency_key, "site-connected-v1");
-  assert.equal((insertedJobs[0].brief_payload as Record<string, unknown>).schemaVersion, "neo-luna-brief-v1");
+  const brief = insertedJobs[0].brief_payload as Record<string, unknown>;
+  assert.equal(brief.schemaVersion, "neo-luna-brief-v1");
+  assert.equal((((brief.externalResearchLeads as Record<string, unknown>).items as unknown[]).length), 1);
   assert.equal(audits.length, 1);
   assert.deepEqual(audits[0].metadata, { trigger: "site_connected" });
 });
@@ -59,7 +69,7 @@ test("defers scheduled research while an article still requires action", async (
   const repository = {
     listCustomerContentJobs: async () => [{ id: "job-a", status: "brief_ready" }],
   };
-  const result = await createScheduledOperatorContentJob(repository as never, { id: "site-a", content_learning_status: "completed" });
+  const result = await createScheduledOperatorContentJob(repository as never, { id: "site-a", content_learning_status: "completed" }, research);
   assert.deepEqual(result, { status: "deferred", reason: "An article still requires operator action" });
 });
 
@@ -83,7 +93,7 @@ test("continues scheduled research while fewer than three drafts await customer 
     id: "site-a", organization_id: "org-a", website_url: "https://example.com/", business_name: "Example Media",
     industry: "media", target_audience: "readers", cadence: "daily", next_run_at: "2026-08-14T00:00:00.000Z",
     content_learning_status: "completed",
-  });
+  }, research);
   assert.equal(result.id, "scheduled-job");
 });
 
@@ -91,7 +101,7 @@ test("pauses scheduled research when three drafts await customer review", async 
   const repository = { listCustomerContentJobs: async () => [
     { id: "delivered-a", status: "delivered" }, { id: "delivered-b", status: "delivered" }, { id: "delivered-c", status: "delivered" },
   ] };
-  const result = await createScheduledOperatorContentJob(repository as never, { id: "site-a", content_learning_status: "completed" });
+  const result = await createScheduledOperatorContentJob(repository as never, { id: "site-a", content_learning_status: "completed" }, research);
   assert.deepEqual(result, { status: "deferred", reason: "Customer review queue has reached its limit" });
 });
 
@@ -127,11 +137,31 @@ test("creates the next brief after the previous article is completed", async () 
     content_learning_status: "completed",
   };
 
-  const result = await createScheduledOperatorContentJob(repository as never, site);
+  const result = await createScheduledOperatorContentJob(repository as never, site, research);
 
   assert.equal(result.id, "scheduled-job");
   assert.equal(insertedJobs[0].idempotency_key, "cadence:2026-08-12T00:00:00.000Z");
   assert.equal(insertedJobs[0].status, "brief_ready");
+});
+
+test("still creates a brief when external discovery is unavailable", async () => {
+  const insertedJobs: Record<string, unknown>[] = [];
+  const repository = {
+    findOperatorContentJobByIdempotencyKey: async () => null,
+    listApprovedKnowledge: async () => [], listApprovedSources: async () => [], listRecentArticles: async () => [],
+    listCustomerContentJobs: async () => [], listSiteContentItems: async () => [], updateSite: async () => ({}),
+    insertOperatorContentJob: async (input: Record<string, unknown>) => { const job = { id: "job", ...input }; insertedJobs.push(job); return job; },
+    insertOperatorAuditEvent: async (input: Record<string, unknown>) => input,
+    insertOperatorNotificationOutbox: async () => null,
+  };
+  const unavailable = async () => { throw new Error("provider outage"); };
+  const result = await createInitialOperatorContentJob(repository as never, {
+    id: "site-a", organization_id: "org-a", business_name: "Example", industry: "media", target_audience: "readers",
+    content_learning_status: "completed",
+  }, unavailable as never);
+  assert.equal(result.id, "job");
+  const brief = insertedJobs[0].brief_payload as Record<string, unknown>;
+  assert.equal((((brief.externalResearchLeads as Record<string, unknown>).items as unknown[]).length), 0);
 });
 
 test("defers all topic generation until website learning completes", async () => {
@@ -139,6 +169,6 @@ test("defers all topic generation until website learning completes", async () =>
   const result = await createScheduledOperatorContentJob(repository as never, {
     id: "site-a",
     content_learning_status: "learning",
-  });
+  }, research);
   assert.deepEqual(result, { status: "deferred", reason: "Website learning must complete before research" });
 });
