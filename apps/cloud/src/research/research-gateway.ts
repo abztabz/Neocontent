@@ -4,6 +4,10 @@ import { crossrefAdapter } from "../data-gateway/providers/crossref.js";
 import { dataciteAdapter } from "../data-gateway/providers/datacite.js";
 import { boundedQuery } from "../data-gateway/http.js";
 
+function itemCount(value: unknown): number {
+  return Array.isArray(value) ? value.length : value == null ? 0 : 1;
+}
+
 export async function collectResearchLeads(input: {
   topic: string;
   industry: string;
@@ -27,6 +31,24 @@ export async function collectResearchLeads(input: {
   ]);
   const results = [news, scholarly];
   const successful = results.filter((result) => result.ok);
+  const diagnostics = results.map((result) => result.ok
+    ? {
+        capability: result.capability,
+        status: "ok",
+        provider: result.provider,
+        itemCount: itemCount(result.data),
+        latencyMs: result.durationMs,
+        fallbackCount: result.attempts.length,
+      }
+    : {
+        capability: result.capability,
+        status: "unavailable",
+        itemCount: 0,
+        fallbackCount: result.attempts.length,
+        attemptedProviders: result.attempts.map((attempt) => attempt.provider),
+      });
+
+  console.info("[research-gateway] discovery summary", { diagnostics });
 
   return {
     generatedAt: new Date().toISOString(),
@@ -43,8 +65,6 @@ export async function collectResearchLeads(input: {
           discoveredVia: result.provider,
         }))
       : []).slice(0, 13),
-    diagnostics: results.map((result) => result.ok
-      ? { capability: result.capability, status: "ok", provider: result.provider, priorAttempts: result.attempts.length }
-      : { capability: result.capability, status: "unavailable" }),
+    diagnostics,
   };
 }

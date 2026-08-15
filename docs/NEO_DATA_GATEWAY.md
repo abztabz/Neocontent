@@ -69,6 +69,23 @@ Before an operator-managed Luna brief is created, NeoContent now:
 
 Provider availability therefore improves research speed without becoming a queue dependency or a source-of-truth shortcut.
 
+## Observability and audit privacy
+
+The gateway records only operational telemetry needed to judge source health:
+
+- capability;
+- selected provider;
+- item count;
+- request duration;
+- fallback count;
+- fallback provider identifier and coarse outcome (`error` or `empty`).
+
+It deliberately does **not** persist research queries, article titles, source URLs, provider response bodies, raw exception messages, customer knowledge, or private website content in gateway health telemetry.
+
+Each created content job stores a compact research summary in the existing operator audit event. This makes provider availability and fallback behavior reviewable without adding a new database table or placing research content in audit metadata.
+
+The cloud runtime emits the same privacy-safe discovery summary to structured application logs. Provider failures remain non-blocking: health information is useful for operations but never becomes a dependency for creating a brief.
+
 ## Future product boundary
 
 NeoCRM, NeoOS Wealth and future Neo products should consume normalized gateway capabilities rather than provider-specific endpoints. A shared authenticated service endpoint should only be introduced after inter-product authentication, tenant isolation and rate-governance are defined.

@@ -17,6 +17,7 @@ type OperatorProgramRepository = Pick<SupabaseRepository,
 >;
 
 type ResearchCollector = typeof collectResearchLeads;
+type UnknownRecord = Record<string, unknown>;
 
 const initialJobKey = "site-connected-v1";
 const operatorActionStatuses = new Set(["researching", "brief_ready", "draft_ready", "changes_requested"]);
@@ -24,6 +25,39 @@ const maximumAwaitingCustomerReview = 3;
 
 function list(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String).map((item) => item.trim()).filter(Boolean).slice(0, 50) : [];
+}
+
+function record(value: unknown): UnknownRecord {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as UnknownRecord : {};
+}
+
+function boundedCount(value: unknown): number {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.min(10_000, Math.round(number))) : 0;
+}
+
+export function researchAuditSummary(value: unknown) {
+  const research = record(value);
+  const providers = Array.isArray(research.providers)
+    ? research.providers.map(record).map((provider) => String(provider.id ?? "").slice(0, 100)).filter(Boolean).slice(0, 10)
+    : [];
+  const leadCount = Array.isArray(research.items) ? Math.min(research.items.length, 100) : 0;
+  const capabilities = Array.isArray(research.diagnostics)
+    ? research.diagnostics.map(record).slice(0, 10).map((diagnostic) => ({
+        capability: String(diagnostic.capability ?? "unknown").slice(0, 100),
+        status: String(diagnostic.status ?? "unknown").slice(0, 30),
+        provider: String(diagnostic.provider ?? "").slice(0, 100),
+        itemCount: boundedCount(diagnostic.itemCount),
+        fallbackCount: boundedCount(diagnostic.fallbackCount),
+        latencyMs: boundedCount(diagnostic.latencyMs),
+      }))
+    : [];
+  return {
+    status: leadCount > 0 ? "available" : "unavailable",
+    leadCount,
+    providers,
+    capabilities,
+  };
 }
 
 export function nextResearchAt(cadence: unknown, from: Date = new Date()): string {
@@ -90,7 +124,6 @@ async function createProgramJob(
   } catch (error) {
     console.warn("[research-gateway] discovery unavailable", {
       errorName: error instanceof Error ? error.name : "Error",
-      errorMessage: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300),
     });
     externalResearchLeads = {
       generatedAt: new Date().toISOString(),
@@ -157,7 +190,10 @@ async function createProgramJob(
     event_type: "content_job_created",
     actor_type: "system",
     outcome: "success",
-    metadata: { trigger },
+    metadata: {
+      trigger,
+      research: researchAuditSummary(externalResearchLeads),
+    },
   });
   await repository.updateSite(siteId, { next_run_at: nextResearchAt(site.cadence) });
   await notifyOperatorSafely(repository as SupabaseRepository, "brief_ready", `brief-ready:${String(job.id)}`);
