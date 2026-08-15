@@ -5,10 +5,20 @@ export type GatewayAdapter = (
   provider: SourceProvider,
 ) => Promise<{ data: unknown; sourceObservedAt?: string | null }>;
 
+export interface GatewayAttempt {
+  provider: string;
+  durationMs: number;
+  outcome: "error" | "empty";
+}
+
 function hasUsableData(value: unknown): boolean {
   if (value == null) return false;
   if (Array.isArray(value)) return value.length > 0;
   return true;
+}
+
+function elapsedMs(startedAt: Date, finishedAt: Date): number {
+  return Math.max(0, Math.round(finishedAt.getTime() - startedAt.getTime()));
 }
 
 export class NeoDataGateway {
@@ -18,20 +28,25 @@ export class NeoDataGateway {
   ) {}
 
   async request(capability: string, input: Record<string, unknown>) {
-    const attempts: Array<Record<string, string>> = [];
+    const attempts: GatewayAttempt[] = [];
     for (const provider of providersFor(capability)) {
       const adapter = this.adapters[provider.id];
       if (!adapter) continue;
-      const startedAt = this.now().toISOString();
+      const startedAt = this.now();
       try {
         const result = await adapter(input, provider);
-        if (!result || !hasUsableData(result.data)) throw new Error("Provider returned no usable data");
+        const finishedAt = this.now();
+        if (!result || !hasUsableData(result.data)) {
+          attempts.push({ provider: provider.id, durationMs: elapsedMs(startedAt, finishedAt), outcome: "empty" });
+          continue;
+        }
         return {
           ok: true as const,
           capability,
           provider: provider.id,
-          observedAt: this.now().toISOString(),
+          observedAt: finishedAt.toISOString(),
           sourceObservedAt: result.sourceObservedAt ?? null,
+          durationMs: elapsedMs(startedAt, finishedAt),
           provenance: {
             provider: provider.name,
             attribution: provider.attribution ?? null,
@@ -40,13 +55,9 @@ export class NeoDataGateway {
           data: result.data,
           attempts,
         };
-      } catch (error) {
-        attempts.push({
-          provider: provider.id,
-          startedAt,
-          failedAt: this.now().toISOString(),
-          message: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
-        });
+      } catch {
+        const finishedAt = this.now();
+        attempts.push({ provider: provider.id, durationMs: elapsedMs(startedAt, finishedAt), outcome: "error" });
       }
     }
     return {
