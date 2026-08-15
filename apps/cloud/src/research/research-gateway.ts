@@ -3,6 +3,7 @@ import { gdeltAdapter } from "../data-gateway/providers/gdelt.js";
 import { crossrefAdapter } from "../data-gateway/providers/crossref.js";
 import { dataciteAdapter } from "../data-gateway/providers/datacite.js";
 import { boundedQuery } from "../data-gateway/http.js";
+import { curateResearchLeads } from "./lead-quality.js";
 
 function itemCount(value: unknown): number {
   return Array.isArray(value) ? value.length : value == null ? 0 : 1;
@@ -50,8 +51,16 @@ export async function collectResearchLeads(input: {
 
   console.info("[research-gateway] discovery summary", { diagnostics });
 
+  const generatedAt = new Date();
+  const discoveredItems = successful.flatMap((result) => Array.isArray(result.data)
+    ? result.data.map((item) => ({
+        ...(item && typeof item === "object" && !Array.isArray(item) ? item : {}),
+        discoveredVia: result.provider,
+      }))
+    : []);
+
   return {
-    generatedAt: new Date().toISOString(),
+    generatedAt: generatedAt.toISOString(),
     usage: "discovery_only_requires_independent_verification",
     providers: successful.map((result) => ({
       id: result.provider,
@@ -59,12 +68,7 @@ export async function collectResearchLeads(input: {
       attribution: result.provenance.attribution,
       dataBoundary: result.provenance.dataBoundary,
     })),
-    items: successful.flatMap((result) => Array.isArray(result.data)
-      ? result.data.map((item) => ({
-          ...(item && typeof item === "object" && !Array.isArray(item) ? item : {}),
-          discoveredVia: result.provider,
-        }))
-      : []).slice(0, 13),
+    items: curateResearchLeads(discoveredItems, generatedAt),
     diagnostics,
   };
 }
