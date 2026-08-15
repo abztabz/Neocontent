@@ -17,6 +17,15 @@ test("creates a governed customer-specific Luna brief", () => {
         title: "Our editorial guide", excerpt: "A calm, practical customer-authored sample.",
         url: "https://customer.example/guide", contentType: "post", voiceEligible: true,
       }],
+      externalResearchLeads: {
+        generatedAt: "2026-08-15T00:00:00.000Z",
+        providers: [{ id: "gdelt-doc", attribution: "GDELT Project", dataBoundary: "Discovery only" }],
+        items: [{
+          kind: "news", title: "Current signal", url: "https://publisher.example/story",
+          publisher: "publisher.example", publishedAt: "2026-08-14T00:00:00.000Z",
+          discoveredVia: "gdelt-doc", temporalRole: "current_signal", verificationStatus: "verified",
+        }],
+      },
     },
     approvedSources: [{
       status: "approved", label: "State guidance", url: "https://az.gov/example", publisher: "Arizona",
@@ -30,4 +39,8 @@ test("creates a governed customer-specific Luna brief", () => {
   assert.doesNotMatch(JSON.stringify(brief), /unsafe\.example/);
   assert.equal((((brief.brandVoiceEvidence as Record<string, unknown>).samples as unknown[]).length), 1);
   assert.equal((((brief.customerWebsiteEvidence as Record<string, unknown>).items as unknown[]).length), 1);
+  const leads = ((brief.externalResearchLeads as Record<string, unknown>).items as Record<string, unknown>[]);
+  assert.equal(leads[0].temporalRole, "current_signal");
+  assert.equal(leads[0].verificationStatus, "discovery_only");
+  assert.match(String((brief.externalResearchLeads as Record<string, unknown>).instruction), /temporalRole/);
 });
