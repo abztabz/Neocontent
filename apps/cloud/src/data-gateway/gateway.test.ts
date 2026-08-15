@@ -6,10 +6,11 @@ import { gdeltAdapter } from "./providers/gdelt.js";
 import { crossrefAdapter } from "./providers/crossref.js";
 import { dataciteAdapter } from "./providers/datacite.js";
 
-test("production selection excludes experimental providers and orders scholarly fallbacks", () => {
+test("production selection excludes experimental providers and preserves approved fallback order", () => {
   assert.deepEqual(providersFor("news-discovery").map((provider) => provider.id), ["gdelt-doc"]);
   assert.deepEqual(providersFor("scholarly-discovery").map((provider) => provider.id), ["crossref", "datacite"]);
-  assert.deepEqual(providersFor("company-filings").map((provider) => provider.id), []);
+  assert.deepEqual(providersFor("company-filings").map((provider) => provider.id), ["sec-edgar"]);
+  assert.deepEqual(providersFor("fx-rates").map((provider) => provider.id), ["ecb-data-portal"]);
 });
 
 test("normalizes GDELT results as discovery-only HTTPS leads", async () => {
