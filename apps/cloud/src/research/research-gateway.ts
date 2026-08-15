@@ -8,8 +8,52 @@ import { boundedQuery } from "../data-gateway/http.js";
 import { curateResearchLeads } from "./lead-quality.js";
 import { selectResearchCapabilities } from "./industry-capability-policy.js";
 
+type GatewayResult = Awaited<ReturnType<NeoDataGateway["request"]>>;
+
 function itemCount(value: unknown): number {
   return Array.isArray(value) ? value.length : value == null ? 0 : 1;
+}
+
+function remoteGatewayConfig() {
+  const url = String(process.env.NEO_SOURCE_REGISTRY_URL ?? "").trim().replace(/\/+$/, "");
+  const token = String(process.env.NEO_SOURCE_REGISTRY_TOKEN ?? "").trim();
+  const consumer = String(process.env.NEO_SOURCE_REGISTRY_CONSUMER ?? "neocontent").trim().toLowerCase();
+  return {
+    enabled: Boolean(url && token && /^https:\/\//i.test(url)),
+    url,
+    token,
+    consumer: /^[a-z0-9][a-z0-9-]{1,63}$/.test(consumer) ? consumer : "neocontent",
+  };
+}
+
+async function requestRemoteGateway(
+  capability: string,
+  input: Record<string, unknown>,
+  options: { includeExperimental?: boolean } = {},
+): Promise<GatewayResult | null> {
+  const config = remoteGatewayConfig();
+  if (!config.enabled) return null;
+
+  try {
+    const response = await fetch(`${config.url}/v1/query`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-neo-consumer": config.consumer,
+        authorization: `Bearer ${config.token}`,
+      },
+      body: JSON.stringify({ capability, input, includeExperimental: options.includeExperimental === true }),
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!response.ok) return null;
+    const payload = await response.json() as unknown;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+    const result = payload as Record<string, unknown>;
+    if (result.capability !== capability || typeof result.ok !== "boolean" || !Array.isArray(result.attempts)) return null;
+    return payload as GatewayResult;
+  } catch {
+    return null;
+  }
 }
 
 export async function collectResearchLeads(input: {
@@ -33,7 +77,14 @@ export async function collectResearchLeads(input: {
   const zenserpKey = String(process.env.NEO_ZENSERP_KEY ?? "").trim();
   if (serpApiKey) adapters.serpapi = serpApiAdapter(serpApiKey);
   if (zenserpKey) adapters.zenserp = zenserpAdapter(zenserpKey);
-  const gateway = new NeoDataGateway(adapters);
+  const localGateway = new NeoDataGateway(adapters);
+  const requestGateway = async (
+    capability: string,
+    capabilityInput: Record<string, unknown>,
+    options: { includeExperimental?: boolean } = {},
+  ) => (await requestRemoteGateway(capability, capabilityInput, options))
+    ?? localGateway.request(capability, capabilityInput, options);
+
   const seoEnabled = process.env.NEO_ENABLE_EXPERIMENTAL_SEO === "true" && Boolean(serpApiKey || zenserpKey);
   const routing = selectResearchCapabilities({
     industry: input.industry,
@@ -43,12 +94,12 @@ export async function collectResearchLeads(input: {
   });
   const results = await Promise.all(routing.capabilities.map((capability) => {
     if (capability === "news-discovery") {
-      return gateway.request(capability, { query, days: 14, limit: 8 });
+      return requestGateway(capability, { query, days: 14, limit: 8 });
     }
     if (capability === "scholarly-discovery") {
-      return gateway.request(capability, { query, limit: 5 });
+      return requestGateway(capability, { query, limit: 5 });
     }
-    return gateway.request(capability, {
+    return requestGateway(capability, {
       query: boundedQuery(input.topic, 300),
       location: boundedQuery(input.location, 120),
     }, { includeExperimental: true });
@@ -73,7 +124,7 @@ export async function collectResearchLeads(input: {
         attemptedProviders: result.attempts.map((attempt) => attempt.provider),
       });
 
-  console.info("[research-gateway] discovery summary", { diagnostics });
+  console.info("[research-gateway] discovery summary", { diagnostics, remoteGatewayEnabled: remoteGatewayConfig().enabled });
 
   const generatedAt = new Date();
   const discoveredItems = successfulEvidence.flatMap((result) => Array.isArray(result.data)
