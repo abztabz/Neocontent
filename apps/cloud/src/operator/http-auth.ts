@@ -19,22 +19,36 @@ export function assertOperatorCsrf(request: VercelRequestLike, body: Record<stri
 }
 
 export function assertSameOrigin(request: VercelRequestLike): void {
-  const origin = String(request.headers.origin ?? "");
+  const origin = String(request.headers.origin ?? "").trim();
   const hostCandidates = [
     ...String(request.headers.host ?? "").split(","),
     ...String(request.headers["x-forwarded-host"] ?? "").split(","),
     String(process.env.VERCEL_PROJECT_PRODUCTION_URL ?? ""),
     String(process.env.VERCEL_URL ?? ""),
   ].map((value) => value.trim().toLowerCase()).filter(Boolean);
-  if (!origin) throw new Error("Operator request origin is required");
+
+  const fetchSite = String(request.headers["sec-fetch-site"] ?? "").toLowerCase();
+  const referer = String(request.headers.referer ?? "");
+  let refererHost = "";
+  if (referer) {
+    try {
+      const parsedReferer = new URL(referer);
+      if (parsedReferer.protocol === "https:") refererHost = parsedReferer.host.toLowerCase();
+    } catch {
+      refererHost = "";
+    }
+  }
+
+  if (!origin || origin.toLowerCase() === "null") {
+    if (fetchSite === "same-origin" && refererHost && hostCandidates.includes(refererHost)) return;
+    throw new Error(origin ? "Operator request origin is invalid" : "Operator request origin is required");
+  }
 
   let parsed: URL;
   try { parsed = new URL(origin); } catch { throw new Error("Operator request origin is invalid"); }
   if (parsed.protocol !== "https:") throw new Error("Operator request origin is invalid");
   if (hostCandidates.includes(parsed.host.toLowerCase())) return;
 
-  const fetchSite = String(request.headers["sec-fetch-site"] ?? "").toLowerCase();
-  const referer = String(request.headers.referer ?? "");
   let refererMatches = false;
   if (referer) {
     try { refererMatches = new URL(referer).origin === parsed.origin; } catch { refererMatches = false; }

@@ -48,6 +48,34 @@ test("operator same-origin accepts an iOS same-origin form behind a mismatched p
   }));
 });
 
+test("operator same-origin accepts iOS null origin only with same-origin fetch metadata and trusted referer host", () => {
+  assert.doesNotThrow(() => assertSameOrigin({
+    method: "POST",
+    headers: {
+      origin: "null",
+      referer: "https://living-content-engine.vercel.app/api/operator/research-now",
+      host: "living-content-engine.vercel.app",
+      "sec-fetch-site": "same-origin",
+    },
+    query: {},
+    body: {},
+  }));
+});
+
+test("operator null origin is rejected when the referer is not trusted", () => {
+  assert.throws(() => assertSameOrigin({
+    method: "POST",
+    headers: {
+      origin: "null",
+      referer: "https://evil.test/operator",
+      host: "living-content-engine.vercel.app",
+      "sec-fetch-site": "same-origin",
+    },
+    query: {},
+    body: {},
+  }), /origin is invalid/i);
+});
+
 test("operator same-origin rejects a fallback request with a mismatched referer", () => {
   assert.throws(() => assertSameOrigin({
     method: "POST",
