@@ -1,3 +1,5 @@
+import type { EditorialDNA } from "./editorial-dna.js";
+
 export type ClaimCategory = "business" | "industry" | "timely" | "general_guidance";
 
 export interface ArticleSource {
@@ -59,6 +61,7 @@ export async function writeArticle(input: {
   approvedKnowledge: Record<string, unknown>[];
   evidence: unknown[];
   existingTitles: string[];
+  editorialDNA?: EditorialDNA;
 }): Promise<GeneratedArticle> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY is missing");
@@ -82,7 +85,14 @@ export async function writeArticle(input: {
     })),
   };
 
-  const prompt = `Create one evidence-backed WordPress blog for this business.\n\nSELECTED CONTENT OPPORTUNITY\n${JSON.stringify(input.opportunity)}\n\nBUSINESS\n${JSON.stringify(input.site)}\n\nAPPROVED BUSINESS KNOWLEDGE\n${JSON.stringify(input.approvedKnowledge)}\n\nAPPROVED EXTERNAL EVIDENCE\n${JSON.stringify(input.evidence)}\n\nEXISTING TITLES\n${JSON.stringify(input.existingTitles)}\n\nRules:\n- Follow the selected content opportunity and preserve its audience intent.\n- Never claim the business offers anything not present in approved business knowledge or the business profile.\n- Every material external fact must be supported by the supplied evidence.\n- Use the exact evidence source id when linking a claim to evidence.\n- Business claims must be supported by approved business knowledge, not by unrelated external evidence.\n- Timely claims require a current source.\n- General guidance may have an empty sourceIds array only when it makes no material external factual claim.\n- Do not invent sources, dates, statistics, laws, studies, or quotations.\n- Avoid duplicating existing titles.\n- Return clean semantic WordPress HTML between 900 and 1400 words. The title is the only H1, so body must use paragraphs, H2 sections, H3 subsections where useful, and lists or blockquotes when they aid comprehension.\n- Provide a featured image concept and up to three useful inline image concepts. Do not invent image URLs or licensing rights.\n- Return JSON only.`;
+  const editorialDNA = input.editorialDNA && input.editorialDNA.corpusSize >= 5
+    ? input.editorialDNA
+    : null;
+  const lengthRule = editorialDNA?.core.medianWords && editorialDNA.core.medianWords >= 300
+    ? `Aim near the publication's median article length of about ${editorialDNA.core.medianWords} words; do not force a generic 900-1400 word SEO length.`
+    : "Use the length needed to cover the topic clearly; avoid padding.";
+
+  const prompt = `Create one evidence-backed WordPress blog for this business.\n\nSELECTED CONTENT OPPORTUNITY\n${JSON.stringify(input.opportunity)}\n\nBUSINESS\n${JSON.stringify(input.site)}\n\nEDITORIAL DNA — PRIMARY HOUSE-STYLE AUTHORITY\n${JSON.stringify(editorialDNA)}\n\nAPPROVED BUSINESS KNOWLEDGE\n${JSON.stringify(input.approvedKnowledge)}\n\nAPPROVED EXTERNAL EVIDENCE\n${JSON.stringify(input.evidence)}\n\nEXISTING TITLES\n${JSON.stringify(input.existingTitles)}\n\nRules:\n- External research determines what is timely or factual; Editorial DNA determines how this publication covers it.\n- When Editorial DNA is present, treat its Core DNA as a hard house-style constraint for language/script, headline form, article format, structure and typical depth.\n- Adaptive signals may influence current vocabulary and framing but must never override Core DNA.\n- Learn patterns, never copy phrases or passages from representative titles or customer content. Do not imitate an individual author.\n- Follow the selected content opportunity and preserve its audience intent.\n- Never claim the business offers anything not present in approved business knowledge or the business profile.\n- Every material external fact must be supported by the supplied evidence.\n- Use the exact evidence source id when linking a claim to evidence.\n- Business claims must be supported by approved business knowledge, not by unrelated external evidence.\n- Timely claims require a current source.\n- General guidance may have an empty sourceIds array only when it makes no material external factual claim.\n- Do not invent sources, dates, statistics, laws, studies, or quotations.\n- Avoid duplicating existing titles.\n- ${lengthRule}\n- Return clean semantic WordPress HTML. The title is the only H1; body must use paragraphs, H2 sections, H3 subsections where useful, and lists or blockquotes only when consistent with the publication and useful to readers.\n- Provide a featured image concept and up to three useful inline image concepts. Do not invent image URLs or licensing rights.\n- Return JSON only.`;
 
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
