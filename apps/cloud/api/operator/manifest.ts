@@ -14,5 +14,13 @@ export default function handler(request: VercelRequestLike, response: VercelResp
     display: "standalone",
     background_color: "#f4f6f8",
     theme_color: "#17202a",
+    shortcuts: [
+      {
+        name: "Run Research Now",
+        short_name: "Research Now",
+        description: "Run an additional governed research cycle without replacing the scheduled cadence",
+        url: "/api/operator/research-now",
+      },
+    ],
   });
 }
