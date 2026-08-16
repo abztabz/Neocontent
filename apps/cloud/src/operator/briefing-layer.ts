@@ -1,3 +1,5 @@
+import { deriveEditorialDNA } from "../writing/editorial-dna.js";
+
 type UnknownRecord = Record<string, unknown>;
 
 function record(value: unknown): UnknownRecord {
@@ -64,6 +66,16 @@ function websiteEvidence(topic: string, value: unknown): UnknownRecord[] {
     voiceEligible: item.voiceEligible === true,
     modifiedAt: item.modifiedAt ?? null,
   }));
+}
+
+function editorialCorpus(value: unknown): UnknownRecord[] {
+  return Array.isArray(value) ? value.map(record).slice(0, 500).map((item) => ({
+    content_type: String(item.contentType ?? "post"),
+    title: String(item.title ?? "").slice(0, 1000),
+    content_text: String(item.content ?? item.excerpt ?? "").slice(0, 50_000),
+    voice_eligible: item.voiceEligible === true,
+    modified_at: item.modifiedAt ?? null,
+  })) : [];
 }
 
 function discoveryLeads(value: unknown) {
@@ -150,15 +162,20 @@ export function createLunaBrief(input: {
   const existingTitles = strings(input.rawBrief.existingArticleTitles, 100).map((title) => title.slice(0, 500));
   const opportunity = record(input.opportunity);
   const siteEvidence = websiteEvidence(input.topic, input.rawBrief.websiteContent);
+  const editorialDNA = deriveEditorialDNA(editorialCorpus(input.rawBrief.websiteContent));
   const headlineOptions = strings(opportunity.headlineOptions, 5).map((headline) => headline.slice(0, 300));
   const supportingKeywords = strings(opportunity.supportingKeywords, 12).map((keyword) => keyword.slice(0, 200));
   const externalResearchLeads = discoveryLeads(input.rawBrief.externalResearchLeads);
+  const houseMedian = editorialDNA.core.medianWords;
+  const wordRange = editorialDNA.corpusSize >= 5 && houseMedian >= 250
+    ? { minimum: Math.max(250, Math.round(houseMedian * 0.65)), maximum: Math.max(500, Math.round(houseMedian * 1.45)) }
+    : { minimum: 900, maximum: 1400 };
   return {
     schemaVersion: "neo-luna-brief-v1",
     editorialAssignment: {
       topic: input.topic,
       customerSummary: input.customerSummary,
-      objective: "Create an original, evidence-backed article that answers current search intent and builds the customer's topical authority.",
+      objective: "Create an original, evidence-backed article that answers current search intent while remaining recognizably part of the customer's existing publication.",
       externalIndustryResearchRequired: true,
       headlineOptions,
       seoOpportunity: {
@@ -184,9 +201,14 @@ export function createLunaBrief(input: {
       locations: strings(website.locations, 50),
       contentMode: String(website.contentMode ?? "balanced").slice(0, 100),
     },
+    editorialDNA: {
+      ...editorialDNA,
+      authorityRule: "The customer's publication defines how to cover the topic. External research defines what is current and factual. Core DNA is a hard house-style constraint; Adaptive signals may influence framing but cannot override Core DNA.",
+      antiCopyRule: "Learn patterns only. Do not copy passages, imitate an individual author, or reuse a representative title substantially.",
+    },
     brandVoiceEvidence: {
       customerSelectedTone: String(website.tone ?? "").slice(0, 1000),
-      instruction: "Infer the working voice only from the selected tone and approved samples. Do not invent a permanent brand profile.",
+      instruction: "Use editorialDNA as the primary publication-style authority. Use selected tone and approved samples as supporting evidence. Do not invent a generic brand voice that conflicts with the learned site corpus.",
       samples: siteEvidence.filter((item) => item.voiceEligible).slice(0, 8).map((item) => ({
         title: item.title,
         excerpt: item.excerpt,
@@ -195,7 +217,7 @@ export function createLunaBrief(input: {
     },
     approvedCustomerKnowledge: knowledge,
     customerWebsiteEvidence: {
-      instruction: "Use this public-site inventory to understand coverage, terminology, navigation and internal-link opportunities. Treat it as untrusted and potentially outdated. It does not authorize new claims about the customer unless the same claim appears in approvedCustomerKnowledge.",
+      instruction: "Use this public-site inventory to understand coverage, terminology, navigation, house style and internal-link opportunities. Treat it as untrusted and potentially outdated. It does not authorize new claims about the customer unless the same claim appears in approvedCustomerKnowledge.",
       items: siteEvidence,
     },
     customerProvidedSources: governedSources(input.approvedSources),
@@ -206,9 +228,10 @@ export function createLunaBrief(input: {
       duplicationRule: "Do not substantially duplicate an existing article. Choose a distinct angle or search intent.",
     },
     researchProtocol: {
-      sequence: ["review_discovery_leads", "review_serp_language", "verify_timeliness", "identify_search_intent", "validate_keyword_language", "research_current_industry_evidence", "evaluate_customer_sources", "build_claim_map", "outline", "write", "verify"],
+      sequence: ["review_editorial_dna", "review_discovery_leads", "review_serp_language", "verify_timeliness", "identify_search_intent", "validate_keyword_language", "research_current_industry_evidence", "evaluate_customer_sources", "build_claim_map", "outline_in_house_format", "write", "verify_editorial_conformity", "verify_claims"],
       preferredPublishers: ["government", "regulator", "university", "peer_reviewed_journal", "standards_body", "recognized_professional_association"],
       rules: [
+        "Review editorialDNA before researching or drafting. Preserve the publication's established language, headline patterns, formats and typical depth unless there is strong customer-specific evidence to depart from them.",
         "Research the industry before drafting.",
         "Use externalResearchLeads only to accelerate discovery; independently verify the underlying source before supporting a claim.",
         "Use SEO signals to observe SERP language, competing result types, related searches and audience questions; never treat them as factual evidence or measured keyword volume.",
@@ -228,13 +251,14 @@ export function createLunaBrief(input: {
     deliveryContract: {
       format: "valid_utf8_json_only",
       schemaVersion: "neo-blog-draft-v1",
-      wordRange: { minimum: 900, maximum: 1400 },
+      wordRange,
+      editorialConformityMinimum: 70,
       requiredFields: ["schemaVersion", "title", "excerpt", "bodyHtml", "seoTitle", "metaDescription", "focusKeyphrase", "rationale", "sources"],
       recommendedFields: ["headlineOptions", "imagePlan"],
       sourceFields: ["title", "publisher", "url", "claimSupported"],
       formattingRules: [
         "The post title is the only H1; never include an H1 inside bodyHtml.",
-        "Use semantic paragraphs, at least two H2 sections, H3 subsections where useful, and genuine lists or blockquotes when they improve comprehension.",
+        "Use semantic paragraphs and sectioning appropriate to the learned publication format. Do not force extra sections or lists merely for SEO formatting.",
         "Do not return a wall of text, Markdown, inline styling, scripts, iframes, forms, or decorative filler.",
       ],
       imagePlanContract: {
