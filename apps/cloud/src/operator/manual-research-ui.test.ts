@@ -6,6 +6,6 @@ const source = fs.readFileSync(new URL("../../api/operator/index.ts", import.met
 
 test("operator workspace visibly exposes the governed manual research control", () => {
   assert.match(source, />Run Research Now<\/a>/);
-  assert.match(source, /href=\\"\/api\/operator\/research-now\\"/);
+  assert.ok(source.includes('href="/api/operator/research-now"'));
   assert.match(source, /without changing the scheduled cadence/i);
 });
