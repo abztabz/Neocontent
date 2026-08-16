@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { SupabaseRepository } from "../db/supabase.js";
 import { generateOpportunities, selectOpportunity } from "../opportunities/opportunity-engine.js";
 import { collectResearchLeads } from "../research/research-gateway.js";
@@ -83,7 +84,7 @@ async function createProgramJob(
   repository: OperatorProgramRepository,
   site: Record<string, unknown>,
   idempotencyKey: string,
-  trigger: "site_connected" | "scheduled_cadence",
+  trigger: "site_connected" | "scheduled_cadence" | "manual_operator",
   researchCollector: ResearchCollector,
 ) {
   const siteId = String(site.id ?? "");
@@ -239,4 +240,25 @@ export async function createScheduledOperatorContentJob(
   }
   const scheduledFor = String(site.next_run_at || new Date().toISOString());
   return createProgramJob(repository, site, `cadence:${scheduledFor}`, "scheduled_cadence", researchCollector);
+}
+
+export async function createManualOperatorContentJob(
+  repository: OperatorProgramRepository,
+  site: Record<string, unknown>,
+  researchCollector: ResearchCollector = collectResearchLeads,
+) {
+  const siteId = String(site.id ?? "");
+  if (!siteId) throw new Error("Manual research site identifier is missing");
+  if (String(site.content_learning_status ?? "not_started") !== "completed") {
+    return { status: "deferred", reason: "Website learning must complete before research" };
+  }
+  const jobs = await repository.listCustomerContentJobs(siteId, 100);
+  if (jobs.some((job) => operatorActionStatuses.has(String(job.status ?? "")))) {
+    return { status: "deferred", reason: "An article still requires operator action" };
+  }
+  const awaitingCustomerReview = jobs.filter((job) => String(job.status ?? "") === "delivered").length;
+  if (awaitingCustomerReview >= maximumAwaitingCustomerReview) {
+    return { status: "deferred", reason: "Customer review queue has reached its limit" };
+  }
+  return createProgramJob(repository, site, `manual:${randomUUID()}`, "manual_operator", researchCollector);
 }
