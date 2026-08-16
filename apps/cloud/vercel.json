@@ -8,6 +8,10 @@
     {
       "source": "/api/v1/source-registry",
       "destination": "/api/health?view=source-registry"
+    },
+    {
+      "source": "/api/operator/research-now",
+      "destination": "/api/operator/manifest?view=research-now"
     }
   ],
   "headers": [
