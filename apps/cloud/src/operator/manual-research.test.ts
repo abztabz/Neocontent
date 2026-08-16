@@ -12,7 +12,7 @@ const research = async () => ({
   diagnostics: [{ capability: "news-discovery", status: "ok", provider: "gdelt-doc", itemCount: 1, latencyMs: 25, fallbackCount: 0 }],
 });
 
-test("manual research uses the governed pipeline without moving the scheduled cadence", async () => {
+function repositoryWith(existingJobs: Record<string, unknown>[] = []) {
   const insertedJobs: Record<string, unknown>[] = [];
   const audits: Record<string, unknown>[] = [];
   let scheduleUpdates = 0;
@@ -21,7 +21,7 @@ test("manual research uses the governed pipeline without moving the scheduled ca
     listApprovedKnowledge: async () => [],
     listApprovedSources: async () => [],
     listRecentArticles: async () => [{ title: "Existing article" }],
-    listCustomerContentJobs: async () => insertedJobs.length ? insertedJobs : [{ id: "done", status: "approved", topic: "Existing article" }],
+    listCustomerContentJobs: async () => [...existingJobs, ...insertedJobs],
     listSiteContentItems: async () => Array.from({ length: 10 }, (_, index) => ({
       title: `Top ${index + 5} Nepali Songs`,
       excerpt: "नेपाली संगीत र कलाकारबारे स्थानीय शैलीमा सामग्री।",
@@ -33,53 +33,65 @@ test("manual research uses the governed pipeline without moving the scheduled ca
     })),
     updateSite: async () => { scheduleUpdates += 1; return {}; },
     insertOperatorContentJob: async (input: Record<string, unknown>) => {
-      const job = { id: "manual-job", ...input };
+      const job = { id: `manual-job-${insertedJobs.length + 1}`, ...input };
       insertedJobs.push(job);
       return job;
     },
     insertOperatorAuditEvent: async (input: Record<string, unknown>) => (audits.push(input), input),
     insertOperatorNotificationOutbox: async () => null,
   };
-  const site = {
-    id: "site-a",
-    organization_id: "org-a",
-    website_url: "https://example.com/",
-    business_name: "Example Media",
-    industry: "entertainment media",
-    target_audience: "Nepali audiences",
-    services: ["News and reviews"],
-    locations: ["Nepal"],
-    cadence: "daily",
-    next_run_at: "2026-08-17T02:00:00.000Z",
-    content_learning_status: "completed",
-  };
+  return { repository, insertedJobs, audits, scheduleUpdates: () => scheduleUpdates };
+}
 
-  const result = await createManualOperatorContentJob(repository as never, site, research);
+const site = {
+  id: "site-a",
+  organization_id: "org-a",
+  website_url: "https://example.com/",
+  business_name: "Example Media",
+  industry: "entertainment media",
+  target_audience: "Nepali audiences",
+  services: ["News and reviews"],
+  locations: ["Nepal"],
+  cadence: "daily",
+  next_run_at: "2026-08-17T02:00:00.000Z",
+  content_learning_status: "completed",
+};
 
-  assert.equal(result.id, "manual-job");
-  assert.match(String(insertedJobs[0].idempotency_key), /^manual:/);
-  assert.equal(scheduleUpdates, 0);
-  assert.equal((audits[0].metadata as Record<string, unknown>).trigger, "manual_operator");
-  const brief = insertedJobs[0].brief_payload as Record<string, unknown>;
+test("manual research uses the governed pipeline without moving the scheduled cadence", async () => {
+  const state = repositoryWith([{ id: "done", status: "approved", topic: "Existing article" }]);
+  const result = await createManualOperatorContentJob(state.repository as never, site, research);
+
+  assert.equal(result.id, "manual-job-1");
+  assert.match(String(state.insertedJobs[0].idempotency_key), /^manual:/);
+  assert.equal(state.scheduleUpdates(), 0);
+  assert.equal((state.audits[0].metadata as Record<string, unknown>).trigger, "manual_operator");
+  const brief = state.insertedJobs[0].brief_payload as Record<string, unknown>;
   assert.equal((brief.editorialDNA as Record<string, unknown>).schemaVersion, "neo-editorial-dna-v1");
 });
 
-test("manual research preserves the existing operator-action gate", async () => {
-  const repository = {
-    listCustomerContentJobs: async () => [{ id: "job-a", status: "brief_ready" }],
-  };
-  const result = await createManualOperatorContentJob(repository as never, { id: "site-a", content_learning_status: "completed" }, research);
-  assert.deepEqual(result, { status: "deferred", reason: "An article still requires operator action" });
+test("explicit manual research is not blocked by an article awaiting operator action", async () => {
+  const state = repositoryWith([{ id: "job-a", status: "brief_ready", topic: "Pending article" }]);
+  const result = await createManualOperatorContentJob(state.repository as never, site, research);
+
+  assert.equal(result.id, "manual-job-1");
+  assert.equal(state.insertedJobs.length, 1);
+  assert.equal(state.scheduleUpdates(), 0);
 });
 
-test("manual research preserves the customer review queue limit", async () => {
-  const repository = {
-    listCustomerContentJobs: async () => [
-      { id: "a", status: "delivered" },
-      { id: "b", status: "delivered" },
-      { id: "c", status: "delivered" },
-    ],
-  };
-  const result = await createManualOperatorContentJob(repository as never, { id: "site-a", content_learning_status: "completed" }, research);
-  assert.deepEqual(result, { status: "deferred", reason: "Customer review queue has reached its limit" });
+test("explicit manual research is not blocked by the customer review queue", async () => {
+  const state = repositoryWith([
+    { id: "a", status: "delivered", topic: "A" },
+    { id: "b", status: "delivered", topic: "B" },
+    { id: "c", status: "delivered", topic: "C" },
+  ]);
+  const result = await createManualOperatorContentJob(state.repository as never, site, research);
+
+  assert.equal(result.id, "manual-job-1");
+  assert.equal(state.insertedJobs.length, 1);
+  assert.equal(state.scheduleUpdates(), 0);
+});
+
+test("manual research still requires completed website learning", async () => {
+  const result = await createManualOperatorContentJob({} as never, { id: "site-a", content_learning_status: "running" }, research);
+  assert.deepEqual(result, { status: "deferred", reason: "Website learning must complete before research" });
 });
