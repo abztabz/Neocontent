@@ -1,0 +1,1 @@
+Run Research Now is intentionally surfaced in the authenticated operator workspace as an additive control. It reuses the governed manual research route and does not alter scheduled cadence or research gates.
