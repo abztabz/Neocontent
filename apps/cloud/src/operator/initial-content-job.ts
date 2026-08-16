@@ -207,7 +207,9 @@ async function createProgramJob(
       research: researchAuditSummary(externalResearchLeads),
     },
   });
-  await repository.updateSite(siteId, { next_run_at: nextResearchAt(site.cadence) });
+  if (trigger !== "manual_operator") {
+    await repository.updateSite(siteId, { next_run_at: nextResearchAt(site.cadence) });
+  }
   await notifyOperatorSafely(repository as SupabaseRepository, "brief_ready", `brief-ready:${String(job.id)}`);
   return job;
 }
