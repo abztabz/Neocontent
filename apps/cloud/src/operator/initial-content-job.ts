@@ -254,13 +254,5 @@ export async function createManualOperatorContentJob(
   if (String(site.content_learning_status ?? "not_started") !== "completed") {
     return { status: "deferred", reason: "Website learning must complete before research" };
   }
-  const jobs = await repository.listCustomerContentJobs(siteId, 100);
-  if (jobs.some((job) => operatorActionStatuses.has(String(job.status ?? "")))) {
-    return { status: "deferred", reason: "An article still requires operator action" };
-  }
-  const awaitingCustomerReview = jobs.filter((job) => String(job.status ?? "") === "delivered").length;
-  if (awaitingCustomerReview >= maximumAwaitingCustomerReview) {
-    return { status: "deferred", reason: "Customer review queue has reached its limit" };
-  }
   return createProgramJob(repository, site, `manual:${randomUUID()}`, "manual_operator", researchCollector);
 }
