@@ -29,12 +29,28 @@ function words(value: unknown): string[] {
   return String(value ?? "").trim().split(/\s+/).filter(Boolean);
 }
 
+function scriptCounts(value: string): { latin: number; devanagari: number } {
+  return {
+    latin: (value.match(/[A-Za-z]/g) ?? []).length,
+    devanagari: (value.match(/[\u0900-\u097F]/g) ?? []).length,
+  };
+}
+
 function detectScript(value: string): "latin" | "devanagari" | "mixed" | "unknown" {
-  const latin = (value.match(/[A-Za-z]/g) ?? []).length;
-  const devanagari = (value.match(/[\u0900-\u097F]/g) ?? []).length;
-  if (latin === 0 && devanagari === 0) return "unknown";
-  if (latin > 0 && devanagari > 0) return "mixed";
-  return devanagari > 0 ? "devanagari" : "latin";
+  const counts = scriptCounts(value);
+  if (counts.latin === 0 && counts.devanagari === 0) return "unknown";
+  if (counts.latin > 0 && counts.devanagari > 0) return "mixed";
+  return counts.devanagari > 0 ? "devanagari" : "latin";
+}
+
+function corpusScript(value: string): EditorialDNA["core"]["dominantLanguage"] {
+  const counts = scriptCounts(value);
+  const total = counts.latin + counts.devanagari;
+  if (!total) return "unknown";
+  const devanagariShare = counts.devanagari / total;
+  if (devanagariShare >= 0.65) return "devanagari";
+  if (devanagariShare <= 0.35) return "latin";
+  return "mixed";
 }
 
 function formatOf(title: string): string {
@@ -62,12 +78,7 @@ export function deriveEditorialDNA(items: ContentItem[]): EditorialDNA {
   const corpus = eligible.length ? eligible : items.filter((item) => ["post","page","custom"].includes(String(item.content_type ?? "")));
   const titles = corpus.map((item) => String(item.title ?? "").trim()).filter(Boolean);
   const bodies = corpus.map((item) => String(item.content_text ?? ""));
-  const scriptCounts = new Map<string, number>();
-  for (const sample of [...titles, ...bodies.slice(0, 40)]) {
-    const script = detectScript(sample);
-    scriptCounts.set(script, (scriptCounts.get(script) ?? 0) + 1);
-  }
-  const dominantLanguage = ([...scriptCounts.entries()].sort((a,b) => b[1]-a[1])[0]?.[0] ?? "unknown") as EditorialDNA["core"]["dominantLanguage"];
+  const dominantLanguage = corpusScript(`${titles.join("\n")}\n${bodies.slice(0, 80).join("\n")}`);
   const formats = titles.map(formatOf);
   const formatCounts = new Map<string, number>();
   formats.forEach((format) => formatCounts.set(format, (formatCounts.get(format) ?? 0) + 1));
