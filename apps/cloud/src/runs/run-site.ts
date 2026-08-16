@@ -5,6 +5,7 @@ import { buildEvidencePackage, type FreshnessStatus, type SourceEvidence } from 
 import { researchIndustry } from "../research/live-research.js";
 import { assertPublishable, verifyClaims, type EvidenceSource, type MaterialClaim } from "../research/claim-verifier.js";
 import { writeArticle } from "../writing/article-writer.js";
+import { deriveEditorialDNA, evaluateEditorialConformity } from "../writing/editorial-dna.js";
 import { publishToWordPress } from "../publishing/wordpress-publisher.js";
 
 function nextRun(cadence: unknown): string {
@@ -48,15 +49,25 @@ export async function runSite(
   if (!run?.id) throw new Error("Unable to create content run");
 
   try {
-    const [knowledge, pendingKnowledge, sources, recentArticles] = await Promise.all([
-      repository.listApprovedKnowledge(String(site.id)),
-      repository.listPendingKnowledgeCandidates(String(site.id)),
-      repository.listApprovedSources(String(site.id)),
-      repository.listRecentArticles(String(site.id)),
+    const siteId = String(site.id);
+    const [knowledge, pendingKnowledge, sources, recentArticles, siteContent] = await Promise.all([
+      repository.listApprovedKnowledge(siteId),
+      repository.listPendingKnowledgeCandidates(siteId),
+      repository.listApprovedSources(siteId),
+      repository.listRecentArticles(siteId),
+      repository.listSiteContentItems(siteId, 500),
     ]);
 
+    if (site.content_learning_status && site.content_learning_status !== "completed") {
+      throw new Error("Content run blocked until the website content-learning scan is complete");
+    }
     if (site.knowledge_review_required !== false && pendingKnowledge.length > 0) {
       throw new Error("Content run blocked because website knowledge changes require approval");
+    }
+
+    const editorialDNA = deriveEditorialDNA(siteContent);
+    if (editorialDNA.corpusSize >= 5 && editorialDNA.confidence < 20) {
+      throw new Error("Editorial DNA confidence is too low to draft safely");
     }
 
     const customerEvidence: SourceEvidence[] = sources.map((source) => ({
@@ -70,7 +81,10 @@ export async function runSite(
       excerpts: Array.isArray(source.approved_claims) ? source.approved_claims.map(String) : [],
     }));
 
-    const existingTitles = recentArticles.map((item) => String(item.title));
+    const existingTitles = [
+      ...recentArticles.map((item) => String(item.title)),
+      ...editorialDNA.core.representativeTitles,
+    ].filter(Boolean).slice(0, 60);
     const opportunities = generateOpportunities({
       businessName: String(site.business_name || "the business"),
       industry: String(site.industry || "the industry"),
@@ -103,8 +117,13 @@ export async function runSite(
       approvedKnowledge: knowledge,
       evidence: evidence.sources,
       existingTitles,
+      editorialDNA,
     });
 
+    const conformity = evaluateEditorialConformity(article, editorialDNA);
+    if (!conformity.passed) {
+      throw new Error(`Editorial conformity gate failed (${conformity.score}/100): ${conformity.reasons.join(", ")}`);
+    }
     if (article.businessAlignmentScore < 80) throw new Error("Business alignment score is below the V1 threshold");
     if (article.verificationScore < 70) throw new Error("Model verification score is below the V1 threshold");
     if ((["industry", "timely_industry"].includes(opportunity.stream) || site.content_mode === "industry_authority") && article.sources.length === 0) {
@@ -155,7 +174,7 @@ export async function runSite(
       title: article.title,
       excerpt: article.excerpt,
       body_html: article.body,
-      rationale: article.rationale,
+      rationale: `${article.rationale}\n\nEditorial DNA: ${editorialDNA.schemaVersion}; conformity ${conformity.score}/100`,
       authority_score: article.authorityScore,
       business_alignment_score: article.businessAlignmentScore,
       verification_score: deterministicScore,
@@ -175,13 +194,13 @@ export async function runSite(
     });
     await repository.updateRun(String(run.id), {
       status: "completed",
-      reason: `Delivered to WordPress as ${String(wordpress.status ?? "unknown")}`,
+      reason: `Delivered to WordPress as ${String(wordpress.status ?? "unknown")}; editorial conformity ${conformity.score}/100`,
       article_id: record.id,
       completed_at: new Date().toISOString(),
     });
-    await repository.updateSite(String(site.id), { next_run_at: nextRun(site.cadence) });
+    await repository.updateSite(siteId, { next_run_at: nextRun(site.cadence) });
 
-    return { status: "completed", runId: run.id, articleId: record.id, opportunity, wordpress };
+    return { status: "completed", runId: run.id, articleId: record.id, opportunity, wordpress, editorialDNA, conformity };
   } catch (error) {
     await repository.updateRun(String(run.id), {
       status: "failed",
