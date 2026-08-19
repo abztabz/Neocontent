@@ -8,17 +8,39 @@ export interface ParsedDraftImport {
 function jsonCandidate(raw: string): string {
   if (raw.length < 2 || raw.length > 750_000) throw new Error("Draft JSON size is invalid");
   let value = raw.replace(/^\uFEFF/, "").trim();
-  const fence = value.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i);
+  const fence = value.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/i);
   if (fence) value = fence[1].trim();
 
-  if (!value.startsWith("{") || !value.endsWith("}")) {
-    const start = value.indexOf("{");
-    const end = value.lastIndexOf("}");
-    if (start >= 0 && end > start && start + value.length - end - 1 <= 2_000) {
-      value = value.slice(start, end + 1).trim();
+  // A clipboard or transport layer may serialize the complete object once.
+  // Keep that envelope intact so parseJsonObject can safely unwrap it.
+  if (value.startsWith('"') && value.endsWith('"')) return value;
+
+  const start = value.indexOf("{");
+  if (start < 0) return value;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < value.length; index += 1) {
+    const character = value[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+      continue;
     }
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+    if (character === "{") depth += 1;
+    else if (character === "}" && --depth === 0) return value.slice(start, index + 1).trim();
   }
-  return value;
+
+  // Smart-quoted JSON cannot be balanced safely until its structural quotes are
+  // normalized. Preserve the complete object-looking span for that second pass.
+  const end = value.lastIndexOf("}");
+  return end > start ? value.slice(start, end + 1).trim() : value;
 }
 
 function nextNonWhitespace(value: string, start: number): number {
@@ -33,7 +55,9 @@ function smartQuoteClosesString(value: string, index: number): boolean {
   if (value[next] !== ",") return false;
   const following = nextNonWhitespace(value, next + 1);
   if (following >= value.length) return true;
-  return /["“”{[\]tfn\d-]/.test(value[following]);
+  // A comma followed by a word is ordinary prose (for example “impact test,”
+  // then verify it). A comma followed by a quote/container is JSON structure.
+  return /["“”{}[\]]/.test(value[following]);
 }
 
 function normalizeStructuralSmartQuotes(value: string): string {
@@ -54,12 +78,40 @@ function normalizeStructuralSmartQuotes(value: string): string {
       escaped = false;
       continue;
     }
-    normalized += character;
+    if (inString && (character === "\n" || character === "\r" || character === "\t")) {
+      if (character === "\n") normalized += "\\n";
+      else if (character === "\t") normalized += "\\t";
+      else if (value[index + 1] !== "\n") normalized += "\\n";
+    } else if (!inString && /[\u200B\u2060\uFEFF]/.test(character)) {
+      // iOS and rich-text clipboards may add invisible separators outside data.
+    } else {
+      normalized += character;
+    }
     if (!inString) continue;
     if (character === "\\" && !escaped) escaped = true;
     else escaped = false;
   }
   return normalized;
+}
+
+function parseJsonObject(candidate: string): Record<string, unknown> {
+  const attempts = [candidate, normalizeStructuralSmartQuotes(candidate)];
+  for (const attempt of attempts) {
+    try {
+      let parsed = JSON.parse(attempt) as unknown;
+      // Accept JSON copied as a serialized string, but unwrap only once and
+      // still require the governed object below.
+      if (typeof parsed === "string" && parsed.length <= 750_000) {
+        try { parsed = JSON.parse(parsed) as unknown; } catch { /* try next form */ }
+      }
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // The next bounded normalization is intentionally attempted.
+    }
+  }
+  throw new Error("not-valid-json-object");
 }
 
 function limited(value: unknown, maximum: number): string {
@@ -117,14 +169,7 @@ export function parseDraftImport(raw: string): ParsedDraftImport {
   let payload: Record<string, unknown>;
   try {
     const candidate = jsonCandidate(raw);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(candidate) as unknown;
-    } catch {
-      parsed = JSON.parse(normalizeStructuralSmartQuotes(candidate)) as unknown;
-    }
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not-an-object");
-    payload = parsed as Record<string, unknown>;
+    payload = parseJsonObject(candidate);
   } catch {
     throw new Error("Draft is not valid JSON. Copy Luna's complete JSON response and paste it again.");
   }
